@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.91"
 derive_builder = "0.20.2"
 env_logger = "0.11.5"
 log = "0.4.22"
 modular-bitfield = "0.11.2"
+sdl2 = "0.37.0"
 thiserror = "1.0.64"

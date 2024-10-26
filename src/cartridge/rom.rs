@@ -121,8 +121,12 @@ impl Rom {
         })
     }
 
-    pub fn mbc_type(&self) -> MbcType {
+    pub(super) fn mbc_type(&self) -> MbcType {
         self.cartridge_type.mbc
+    }
+
+    pub fn cgb_flag(&self) -> CgbFlag {
+        self.cgb_flag
     }
 }
 
@@ -138,8 +142,8 @@ pub enum RomError {
     InvalidRamSize(u8),
 }
 
-#[derive(Debug)]
-enum CgbFlag {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CgbFlag {
     DMGOnly,
     DualCompatible,
     CgbOnly,

@@ -15,7 +15,7 @@ impl Mbc for Huc1 {
 }
 
 impl Huc1 {
-    pub fn new(rom: rom::Rom) -> Self {
+    pub fn new(rom: rom::Rom, backup: Option<&[u8]>) -> Self {
         todo!()
     }
 }

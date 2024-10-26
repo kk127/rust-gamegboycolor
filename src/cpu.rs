@@ -1,20 +1,33 @@
 use crate::context;
 use modular_bitfield::prelude::*;
 
+use log::debug;
+
 trait Context: context::Bus {}
 impl<T: context::Bus> Context for T {}
 
-struct Cpu {
+#[derive(Debug, Default)]
+pub struct Cpu {
     registers: Registers,
     ime: bool,
     halt: bool,
 
     clock: u64,
+
+    // for debugging
+    counter: u64,
 }
 
 impl Cpu {
-    fn new() -> Self {
-        todo!()
+    pub fn new() -> Self {
+        Self {
+            registers: Registers::default(),
+            ime: false,
+            halt: false,
+            clock: 0,
+
+            counter: 0,
+        }
     }
 
     fn tick(&mut self, context: &mut impl Context) {
@@ -24,8 +37,10 @@ impl Cpu {
 }
 
 impl Cpu {
-    fn execute_instruction(&mut self, context: &mut impl Context) {
+    pub fn execute_instruction(&mut self, context: &mut impl Context) {
+        let pc = self.registers.pc; // for debugging
         let opcode = self.fetch_8(context);
+        println!("before: {:#06X}, opcode: {:#04X}", pc, opcode);
         match opcode {
             0x00 => self.nop(),
             0x01 => self.ld_r16_imm16(context, opcode),
@@ -137,7 +152,7 @@ impl Cpu {
             0xD9 => self.reti(context),
             0xDA => self.jp_cond_imm16(context, opcode),
             // 0xDB: Invalid opcode
-            0xDC => self.call_cond_imm16(context, opcode),  
+            0xDC => self.call_cond_imm16(context, opcode),
             // 0xDD: Invalid opcode
             0xDE => self.sbc_a_imm8(context),
             0xDF => self.rst_tgt3(context, opcode),
@@ -168,7 +183,7 @@ impl Cpu {
             0xF5 => self.push_r16stk(context, opcode),
             0xF6 => self.or_a_imm8(context),
             0xF7 => self.rst_tgt3(context, opcode),
-            
+
             0xF8 => self.ld_hl_sp_plus_imm8(context),
             0xF9 => self.ld_sp_hl(context),
             0xFA => self.ld_a_ind_imm16(context),
@@ -180,6 +195,12 @@ impl Cpu {
 
             _ => unreachable!("Invalid opcode: {:#04x}", opcode),
         }
+        debug!("Count: {:4}, Cycle: {}, PC: {:#06X}, opcode: {:#04X}, sp: {:#06X}, a: {:#04X}, b: {:#04X}, c: {:#04X}, d: {:#04X}, e: {:#04X}, h: {:#04X}, l: {:#04X}, {}{}{}{}", self.counter, self.clock, self.registers.pc, opcode, self.registers.sp, self.registers.a, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, 
+        if self.registers.f.zero() { "Z" } else { "z" },
+        if self.registers.f.subtract() { "N" } else { "n" },
+        if self.registers.f.half_carry() { "H" } else { "h" },
+        if self.registers.f.carry() { "C" } else { "c" });
+        self.counter += 1;
     }
 
     fn nop(&mut self) {
@@ -213,6 +234,7 @@ impl Cpu {
                 address
             }
         };
+        println!("ld_r16mem_a address: {:#06X}", address);
         self.write_8(address, self.registers.a, context);
     }
 
@@ -304,7 +326,7 @@ impl Cpu {
         self.registers.f.set_subtract(true);
         self.registers
             .f
-            .set_half_carry((value & res) & 0x10 == 0x10);
+            .set_half_carry((value ^ res) & 0x10 == 0x10);
     }
 
     fn ld_r8_imm8(&mut self, context: &mut impl Context, opcode: u8) {
@@ -366,8 +388,10 @@ impl Cpu {
         };
 
         let offset = self.fetch_8(context) as i8 as u16;
+        println!("offset: {:#04X}", offset);
         if should_jump {
             let pc = self.registers.pc.wrapping_add(offset);
+            println!("next pc: {:#06X}", pc);
             self.registers.pc = pc;
             self.tick(context);
         }
@@ -382,12 +406,16 @@ impl Cpu {
         let src_register = Register8::from(opcode & 0b111);
 
         match (dest_register, src_register) {
-            (Register8::HLIndirect, Register8::HLIndirect) => todo!(), // self.halt()
+            (Register8::HLIndirect, Register8::HLIndirect) => self.halt(),
             _ => {
                 let value = self.get_register8(context, src_register);
                 self.set_register8(context, dest_register, value);
             }
         }
+    }
+
+    fn halt(&mut self) {
+        self.halt = true;
     }
 
     fn add_a_r8(&mut self, context: &mut impl Context, opcode: u8) {
@@ -489,7 +517,9 @@ impl Cpu {
         let (res, carry) = self.registers.a.overflowing_sub(value);
         self.registers.f.set_zero(res == 0);
         self.registers.f.set_subtract(true);
-        self.registers.f.set_half_carry((self.registers.a & 0x0F) < (value & 0x0F));
+        self.registers
+            .f
+            .set_half_carry((self.registers.a & 0x0F) < (value & 0x0F));
         self.registers.f.set_carry(carry);
     }
 
@@ -584,7 +614,9 @@ impl Cpu {
         let (res, carry) = self.registers.a.overflowing_sub(value);
         self.registers.f.set_zero(res == 0);
         self.registers.f.set_subtract(true);
-        self.registers.f.set_half_carry((self.registers.a & 0x0F) < (value & 0x0F));
+        self.registers
+            .f
+            .set_half_carry((self.registers.a & 0x0F) < (value & 0x0F));
         self.registers.f.set_carry(carry);
     }
 
@@ -607,6 +639,7 @@ impl Cpu {
 
     fn ret(&mut self, context: &mut impl Context) {
         let address = self.pop_16(context);
+        println!("RET: address: {:#06X}", address);
         self.registers.pc = address;
         self.tick(context);
     }
@@ -733,8 +766,12 @@ impl Cpu {
 
         self.registers.f.set_zero(false);
         self.registers.f.set_subtract(false);
-        self.registers.f.set_half_carry((sp & 0x0F) + (offset & 0x0F) > 0x0F);
-        self.registers.f.set_carry((sp & 0xFF) + (offset & 0xFF) > 0xFF);
+        self.registers
+            .f
+            .set_half_carry((sp & 0x0F) + (offset & 0x0F) > 0x0F);
+        self.registers
+            .f
+            .set_carry((sp & 0xFF) + (offset & 0xFF) > 0xFF);
         self.registers.sp = res;
     }
 
@@ -745,8 +782,12 @@ impl Cpu {
 
         self.registers.f.set_zero(false);
         self.registers.f.set_subtract(false);
-        self.registers.f.set_half_carry((sp & 0x0F) + (offset & 0x0F) > 0x0F);
-        self.registers.f.set_carry((sp & 0xFF) + (offset & 0xFF) > 0xFF);
+        self.registers
+            .f
+            .set_half_carry((sp & 0x0F) + (offset & 0x0F) > 0x0F);
+        self.registers
+            .f
+            .set_carry((sp & 0xFF) + (offset & 0xFF) > 0xFF);
         self.set_hl(res);
         self.tick(context);
     }
@@ -920,9 +961,7 @@ impl Cpu {
         self.ime = true;
     }
 
-
-
-    fn get_register8(&self, context: &mut impl Context, register: Register8) -> u8 {
+    fn get_register8(&mut self, context: &mut impl Context, register: Register8) -> u8 {
         match register {
             Register8::B => self.registers.b,
             Register8::C => self.registers.c,
@@ -953,10 +992,9 @@ impl Cpu {
             Register8::A => self.registers.a = value,
         }
     }
-
-
 }
 
+#[derive(Debug)]
 struct Registers {
     a: u8,
     b: u8,
@@ -970,6 +1008,25 @@ struct Registers {
     sp: u16,
 }
 
+impl Default for Registers {
+    fn default() -> Self {
+        // TODO This is initial state DMG after boot ROM execution.
+        // This should be configurable.
+        Self {
+            a: 0x01,
+            b: 0x00,
+            c: 0x13,
+            d: 0x00,
+            e: 0xD8,
+            h: 0x01,
+            l: 0x4D,
+            f: Flags::new(),
+            pc: 0x100,
+            sp: 0xFFFE,
+        }
+    }
+}
+
 #[bitfield(bits = 8)]
 #[derive(Debug, Default)]
 struct Flags {
@@ -981,21 +1038,23 @@ struct Flags {
 }
 
 impl Cpu {
-    fn read_8(&self, address: u16, context: &mut impl Context) -> u8 {
+    fn read_8(&mut self, address: u16, context: &mut impl Context) -> u8 {
+        self.tick(context);
         context.read(address)
     }
 
-    fn read_16(&self, address: u16, context: &mut impl Context) -> u16 {
+    fn read_16(&mut self, address: u16, context: &mut impl Context) -> u16 {
         let low = self.read_8(address, context) as u16;
         let high = self.read_8(address + 1, context) as u16;
         (high << 8) | low
     }
 
-    fn write_8(&self, address: u16, value: u8, context: &mut impl Context) {
+    fn write_8(&mut self, address: u16, value: u8, context: &mut impl Context) {
+        self.tick(context);
         context.write(address, value)
     }
 
-    fn write_16(&self, address: u16, value: u16, context: &mut impl Context) {
+    fn write_16(&mut self, address: u16, value: u16, context: &mut impl Context) {
         let low = value as u8;
         let high = (value >> 8) as u8;
         self.write_8(address, low, context);
@@ -1016,6 +1075,10 @@ impl Cpu {
 
     fn pop_8(&mut self, context: &mut impl Context) -> u8 {
         let data = self.read_8(self.registers.sp, context);
+        println!(
+            "POP: address: {:#06X}, value: {:#04X}",
+            self.registers.sp, data
+        );
         self.registers.sp += 1;
         data
     }
@@ -1028,6 +1091,10 @@ impl Cpu {
 
     fn push_8(&mut self, value: u8, context: &mut impl Context) {
         self.registers.sp -= 1;
+        println!(
+            "PUSH: address: {:#06X}, value: {:#04X}",
+            self.registers.sp, value
+        );
         self.write_8(self.registers.sp, value, context);
     }
 
@@ -1075,87 +1142,7 @@ impl Cpu {
     }
 }
 
-// enum Instruction {
-//     Nop,
-//     LdR16Imm16(Register16),
-//     LdR16memA(Register16Mem),
-//     LdAR16mem(Register16Mem),
-//     LdImm16Sp,
-//     IncR16(Register16),
-//     DecR16(Register16),
-//     AddHLR16(Register16),
-//     IncR8(Register8),
-//     DecR8(Register8),
-//     LdR8Imm8(Register8),
-//     Rlca,
-//     Rrca,
-//     Rla,
-//     Rra,
-//     Daa,
-//     Cpl,
-//     Scf,
-//     Ccf,
-//     JrImm8,
-//     JrCondImm8(Condition),
-//     Stop,
-//     LdR8R8(Register8, Register8),
-//     Halt,
-//     AddAR8(Register8),
-//     AdcAR8(Register8),
-//     SubAR8(Register8),
-//     SbcAR8(Register8),
-//     AndAR8(Register8),
-//     XorAR8(Register8),
-//     OrAR8(Register8),
-//     CpAR8(Register8),
-//     AddAImm8,
-//     AdcAImm8,
-//     SubAImm8,
-//     SbcAImm8,
-//     AndAImm8,
-//     XorAImm8,
-//     OrAImm8,
-//     CpAImm8,
-//     RetCond(Condition),
-//     Ret,
-//     Reti,
-//     JpCondImm16(Condition),
-//     JpImm16,
-//     JpHl,
-//     CallCondImm16(Condition),
-//     CallImm16,
-//     Rst(u16),
-//     PopR16Stk(R16Stk),
-//     PushR16Stk(R16Stk),
-//     CbPrefix,
-//     LdhCA,
-//     LdhImm8A,
-//     LdImm16A,
-//     LdhAC,
-//     LdhAImm8,
-//     LdAImm16,
-//     AddSPImm8,
-//     LdHlSpImm8,
-//     LdSpHl,
-//     Di,
-//     Ei,
-// }
-
-enum CbPrefixInstruction {
-    Rlc(Register8),
-    Rrc(Register8),
-    Rl(Register8),
-    Rr(Register8),
-    Sla(Register8),
-    Sra(Register8),
-    Swap(Register8),
-    Srl(Register8),
-    Bit(u8, Register8),
-    Res(u8, Register8),
-    Set(u8, Register8),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Register8 {
     B,
     C,

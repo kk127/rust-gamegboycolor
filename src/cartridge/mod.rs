@@ -4,7 +4,7 @@ pub mod rom;
 use std::{default, fmt};
 use mbc::{huc1, mbc1, mbc2, mbc3, mbc5, mbc6, rom_only};
 
-trait Mbc {
+pub trait Mbc {
     fn read(&self, address: u16) -> u8;
     fn write(&mut self, address: u16, value: u8);
 }
@@ -53,16 +53,40 @@ pub enum Cartridge {
 }
 
 impl Cartridge {
-    pub fn new(rom: rom::Rom) -> Self {
+    pub fn new(rom: rom::Rom, backup: Option<&[u8]>) -> Self {
         match rom.mbc_type() {
             MbcType::RomOnly => Cartridge::RomOnly(rom_only::RomOnly::new(rom)),
-            MbcType::Mbc1 => Cartridge::Mbc1(mbc1::Mbc1::new(rom)),
-            MbcType::Mbc2 => Cartridge::Mbc2(mbc2::Mbc2::new(rom)),
-            MbcType::Mbc3 => Cartridge::Mbc3(mbc3::Mbc3::new(rom)),
-            MbcType::Mbc5 => Cartridge::Mbc5(mbc5::Mbc5::new(rom)),
-            MbcType::Mbc6 => Cartridge::Mbc6(mbc6::Mbc6::new(rom)),
-            MbcType::Huc1 => Cartridge::Huc1(huc1::Huc1::new(rom)),
+            MbcType::Mbc1 => Cartridge::Mbc1(mbc1::Mbc1::new(rom, backup)),
+            MbcType::Mbc2 => Cartridge::Mbc2(mbc2::Mbc2::new(rom, backup)),
+            MbcType::Mbc3 => Cartridge::Mbc3(mbc3::Mbc3::new(rom, backup)),
+            MbcType::Mbc5 => Cartridge::Mbc5(mbc5::Mbc5::new(rom, backup)),
+            MbcType::Mbc6 => Cartridge::Mbc6(mbc6::Mbc6::new(rom, backup)),
+            MbcType::Huc1 => Cartridge::Huc1(huc1::Huc1::new(rom, backup)),
             _ => unimplemented!(),
+        }
+    }
+
+    pub fn read(&self, address: u16) -> u8 {
+        match self {
+            Cartridge::RomOnly(rom) => rom.read(address),
+            Cartridge::Mbc1(mbc) => mbc.read(address),
+            Cartridge::Mbc2(mbc) => mbc.read(address),
+            Cartridge::Mbc3(mbc) => mbc.read(address),
+            Cartridge::Mbc5(mbc) => mbc.read(address),
+            Cartridge::Mbc6(mbc) => mbc.read(address),
+            Cartridge::Huc1(mbc) => mbc.read(address),
+        }
+    }
+
+    pub fn write(&mut self, address: u16, value: u8) {
+        match self {
+            Cartridge::RomOnly(rom) => rom.write(address, value),
+            Cartridge::Mbc1(mbc) => mbc.write(address, value),
+            Cartridge::Mbc2(mbc) => mbc.write(address, value),
+            Cartridge::Mbc3(mbc) => mbc.write(address, value),
+            Cartridge::Mbc5(mbc) => mbc.write(address, value),
+            Cartridge::Mbc6(mbc) => mbc.write(address, value),
+            Cartridge::Huc1(mbc) => mbc.write(address, value),
         }
     }
 }
