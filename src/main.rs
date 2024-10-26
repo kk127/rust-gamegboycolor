@@ -80,7 +80,6 @@ fn main() -> Result<()> {
                     .context("Failed to draw point")?;
             }
         }
-        println!("Framebuffer: {:?}", gameboy_color.frame_buffer());
         canvas.present();
 
         // 60 FPS

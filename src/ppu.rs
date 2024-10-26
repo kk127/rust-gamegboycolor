@@ -150,18 +150,6 @@ impl Ppu {
                     self.ly = 0;
                     self.mode = PpuMode::OamSearch;
                     self.frame += 1;
-
-                    // log/vram.logにvramの内容を出力
-                    // let path = "./log/vram.log";
-                    // let mut file = std::fs::File::create(path).unwrap();
-                    // file.write_all(&self.vram).unwrap();
-
-                    // println!("ly: {}, scx: {}, scy: {}", self.ly, self.scx, self.scy);
-                    // println!(
-                    //     "lcdc: {:#04X}, stat: {:#04X}",
-                    //     self.lcdc.bytes[0], self.stat.bytes[0],
-                    // );
-                    // println!("bg_palette: {:#04X}", self.bg_palette.bytes[0]);
                 }
             }
         }
@@ -188,25 +176,12 @@ impl Ppu {
                 0x1800
             };
 
-            println!("x: {}, y: {}, tile_number: {}", x, self.ly, tile_number);
-            println!("tile_x: {}, tile_y: {}", tile_x, tile_y);
-            println!("tile_map_address_base: {:#06X}", tile_map_address_base);
             let tile_map_address = tile_map_address_base + tile_number;
-            println!("tile_map_address: {:#06X}", tile_map_address);
-
             let tile_index = self.vram[tile_map_address] as usize;
             let tile_address = match self.lcdc.bg_window_tile_data_select() {
                 true => tile_index * 16,
                 false => (0x1000_i16).wrapping_add((tile_index as i8 as i16) * 16) as usize,
             };
-            println!(
-                "bg_window_tile_data_select: {}",
-                self.lcdc.bg_window_tile_data_select()
-            );
-            println!(
-                "tile_index: {:#04X}, tile_address: {:#06X}",
-                tile_index, tile_address
-            );
 
             let pixel_address = tile_address + pixel_y * 2;
             let pixel_data_low = (self.vram[pixel_address] >> (7 - pixel_x)) & 1;
@@ -228,10 +203,6 @@ impl Ppu {
                 Color::DarkGray => 0x55,
                 Color::Black => 0x00,
             };
-            println!(
-                "frame_buffer[{}]: {:#04X}",
-                pixel_index, self.frame_buffer[pixel_index]
-            );
         }
     }
 

@@ -40,7 +40,6 @@ impl Cpu {
     pub fn execute_instruction(&mut self, context: &mut impl Context) {
         let pc = self.registers.pc; // for debugging
         let opcode = self.fetch_8(context);
-        println!("before: {:#06X}, opcode: {:#04X}", pc, opcode);
         match opcode {
             0x00 => self.nop(),
             0x01 => self.ld_r16_imm16(context, opcode),
@@ -234,7 +233,6 @@ impl Cpu {
                 address
             }
         };
-        println!("ld_r16mem_a address: {:#06X}", address);
         self.write_8(address, self.registers.a, context);
     }
 
@@ -388,10 +386,8 @@ impl Cpu {
         };
 
         let offset = self.fetch_8(context) as i8 as u16;
-        println!("offset: {:#04X}", offset);
         if should_jump {
             let pc = self.registers.pc.wrapping_add(offset);
-            println!("next pc: {:#06X}", pc);
             self.registers.pc = pc;
             self.tick(context);
         }
@@ -639,7 +635,6 @@ impl Cpu {
 
     fn ret(&mut self, context: &mut impl Context) {
         let address = self.pop_16(context);
-        println!("RET: address: {:#06X}", address);
         self.registers.pc = address;
         self.tick(context);
     }
@@ -1075,10 +1070,6 @@ impl Cpu {
 
     fn pop_8(&mut self, context: &mut impl Context) -> u8 {
         let data = self.read_8(self.registers.sp, context);
-        println!(
-            "POP: address: {:#06X}, value: {:#04X}",
-            self.registers.sp, data
-        );
         self.registers.sp += 1;
         data
     }
@@ -1091,10 +1082,6 @@ impl Cpu {
 
     fn push_8(&mut self, value: u8, context: &mut impl Context) {
         self.registers.sp -= 1;
-        println!(
-            "PUSH: address: {:#06X}, value: {:#04X}",
-            self.registers.sp, value
-        );
         self.write_8(self.registers.sp, value, context);
     }
 

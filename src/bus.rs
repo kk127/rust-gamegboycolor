@@ -122,8 +122,6 @@ impl Bus {
             0xC000..=0xFDFF => {
                 let bank = address & 0x1000;
                 let wram_address = (address & 0x0FFF) + bank * self.wram_bank as u16;
-                // self.wram[((address & 0x0FFF) + bank * self.wram_bank as u16) as usize] = value;
-                println!("Write to WRAM: {:#06X} = {:#04X}", wram_address, value);
                 self.wram[wram_address as usize] = value;
             }
             0xFE00..=0xFE9F => {
