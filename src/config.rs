@@ -48,7 +48,7 @@ struct PrepareSpeedSwitch {
     speed: Speed,
 }
 
-#[derive(BitfieldSpecifier, Debug, Clone, Copy, Default)]
+#[derive(BitfieldSpecifier, Debug, Clone, Copy, Default, Eq, PartialEq)]
 #[bits = 1]
 pub enum Speed {
     #[default]

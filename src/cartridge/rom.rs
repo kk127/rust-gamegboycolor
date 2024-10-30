@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::cartridge::MbcType;
 
 pub struct Rom {
-    pub data: Vec<u8>,
+    data: Vec<u8>,
     title: String,
     manufacturer_code: [u8; 4],
     cgb_flag: CgbFlag,
@@ -127,6 +127,18 @@ impl Rom {
 
     pub fn cgb_flag(&self) -> CgbFlag {
         self.cgb_flag
+    }
+
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn rom_size(&self) -> usize {
+        self.rom_size
+    }
+
+    pub fn ram_size(&self) -> usize {
+        self.ram_size
     }
 }
 

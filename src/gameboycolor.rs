@@ -1,5 +1,7 @@
 use crate::context;
 use crate::context::EmulatorError;
+use crate::interface::LinkCable;
+use crate::joypad::JoypadKeyState;
 use crate::DeviceMode;
 
 pub struct GameBoyColor {
@@ -7,8 +9,12 @@ pub struct GameBoyColor {
 }
 
 impl GameBoyColor {
-    pub fn new(data: &[u8], device_mode: DeviceMode) -> Result<Self, EmulatorError> {
-        let context = context::Context::new(data, device_mode)?;
+    pub fn new(
+        data: &[u8],
+        device_mode: DeviceMode,
+        link_cable: Option<Box<dyn LinkCable>>,
+    ) -> Result<Self, EmulatorError> {
+        let context = context::Context::new(data, device_mode, link_cable)?;
         Ok(Self { context })
     }
 
@@ -22,5 +28,9 @@ impl GameBoyColor {
 
     pub fn frame_buffer(&self) -> &[u8] {
         self.context.frame_buffer()
+    }
+
+    pub fn set_key(&mut self, key_state: JoypadKeyState) {
+        self.context.set_key(key_state);
     }
 }

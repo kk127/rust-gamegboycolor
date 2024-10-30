@@ -1,6 +1,8 @@
 use crate::cartridge::rom::{self, CgbFlag};
 use crate::config::DeviceMode;
-use crate::{apu, bus, cartridge, config, cpu, interrupt, ppu};
+use crate::interface::LinkCable;
+use crate::joypad::JoypadKeyState;
+use crate::{apu, bus, cartridge, config, cpu, interrupt, joypad, ppu, serial, timer};
 
 use thiserror::Error;
 
@@ -16,7 +18,11 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new(data: &[u8], device_mode: DeviceMode) -> Result<Self, EmulatorError> {
+    pub fn new(
+        data: &[u8],
+        device_mode: DeviceMode,
+        link_cable: Option<Box<dyn LinkCable>>,
+    ) -> Result<Self, EmulatorError> {
         let rom = rom::Rom::new(data).unwrap();
         if rom.cgb_flag() == CgbFlag::CgbOnly && device_mode == DeviceMode::GameBoy {
             return Err(EmulatorError::UnsupportedMode(
@@ -36,6 +42,9 @@ impl Context {
                     cartridge,
                     ppu: ppu::Ppu::new(device_mode),
                     apu: apu::Apu::new(),
+                    joypad: joypad::Joypad::new(),
+                    timer: timer::Timer::new(),
+                    serial: serial::Serial::new(link_cable),
                     inner3: Inner3 {
                         interrupt: interrupt::Interrupt::new(),
                         config: config::Config::new(device_mode),
@@ -54,6 +63,10 @@ impl Context {
         while self.inner1.frame() == frame {
             self.execute_instruction();
         }
+    }
+
+    pub fn set_key(&mut self, key_state: JoypadKeyState) {
+        self.inner1.inner2.set_key(key_state);
     }
 
     pub fn frame_buffer(&self) -> &[u8] {
@@ -90,11 +103,33 @@ pub trait Apu {
     fn audio_buffer(&self) -> &[u8];
 }
 
-pub trait Interrupt {
-    fn interrupt_flag(&self) -> interrupt::InterruptFlag;
-    fn interrupt_enable(&self) -> interrupt::InterruptEnable;
+pub trait Timer {
+    fn timer_read(&self, address: u16) -> u8;
+    fn timer_write(&mut self, address: u16, value: u8);
 
-    fn set_intterupt_vblank(&mut self, value: bool);
+    fn timer_tick(&mut self);
+}
+
+pub trait Joypad {
+    fn joypad_read(&self) -> u8;
+    fn joypad_write(&mut self, value: u8);
+    fn set_key(&mut self, key_state: JoypadKeyState);
+}
+
+pub trait Serial {
+    fn serial_read(&self, address: u16) -> u8;
+    fn serial_write(&mut self, address: u16, value: u8);
+    fn serial_tick(&mut self);
+}
+
+pub trait Interrupt {
+    fn interrupt_enable(&self) -> interrupt::InterruptEnable;
+    fn interrupt_flag(&self) -> interrupt::InterruptFlag;
+
+    fn set_interrupt_enable(&mut self, value: u8);
+    fn set_interrupt_flag(&mut self, value: u8);
+
+    fn set_interrupt_vblank(&mut self, value: bool);
     fn set_interrupt_lcd(&mut self, value: bool);
     fn set_interrupt_timer(&mut self, value: bool);
     fn set_interrupt_serial(&mut self, value: bool);
@@ -126,6 +161,9 @@ impl Bus for Inner1 {
     fn tick(&mut self) {
         self.bus.tick(&mut self.inner2);
         self.inner2.ppu_tick();
+        // TODO Implement APU tick
+        self.inner2.timer_tick();
+        self.inner2.serial_tick();
     }
 }
 
@@ -188,8 +226,16 @@ impl Interrupt for Inner1 {
         self.inner2.interrupt_enable()
     }
 
-    fn set_intterupt_vblank(&mut self, value: bool) {
-        self.inner2.set_intterupt_vblank(value);
+    fn set_interrupt_enable(&mut self, value: u8) {
+        self.inner2.set_interrupt_enable(value);
+    }
+
+    fn set_interrupt_flag(&mut self, value: u8) {
+        self.inner2.set_interrupt_flag(value);
+    }
+
+    fn set_interrupt_vblank(&mut self, value: bool) {
+        self.inner2.set_interrupt_vblank(value);
     }
 
     fn set_interrupt_lcd(&mut self, value: bool) {
@@ -231,6 +277,9 @@ struct Inner2 {
     cartridge: cartridge::Cartridge,
     ppu: ppu::Ppu,
     apu: apu::Apu,
+    joypad: joypad::Joypad,
+    timer: timer::Timer,
+    serial: serial::Serial,
     inner3: Inner3,
 }
 
@@ -284,6 +333,48 @@ impl Apu for Inner2 {
     }
 }
 
+impl Joypad for Inner2 {
+    fn joypad_read(&self) -> u8 {
+        self.joypad.read()
+    }
+
+    fn joypad_write(&mut self, value: u8) {
+        self.joypad.write(value);
+    }
+
+    fn set_key(&mut self, key_state: JoypadKeyState) {
+        self.joypad.set_key(&mut self.inner3, key_state);
+    }
+}
+
+impl Timer for Inner2 {
+    fn timer_read(&self, address: u16) -> u8 {
+        self.timer.read(address)
+    }
+
+    fn timer_write(&mut self, address: u16, value: u8) {
+        self.timer.write(address, value);
+    }
+
+    fn timer_tick(&mut self) {
+        self.timer.tick(&mut self.inner3);
+    }
+}
+
+impl Serial for Inner2 {
+    fn serial_read(&self, address: u16) -> u8 {
+        self.serial.read(address)
+    }
+
+    fn serial_write(&mut self, address: u16, value: u8) {
+        self.serial.write(address, value);
+    }
+
+    fn serial_tick(&mut self) {
+        self.serial.tick(&mut self.inner3);
+    }
+}
+
 impl Interrupt for Inner2 {
     fn interrupt_flag(&self) -> interrupt::InterruptFlag {
         self.inner3.interrupt_flag()
@@ -293,8 +384,16 @@ impl Interrupt for Inner2 {
         self.inner3.interrupt_enable()
     }
 
-    fn set_intterupt_vblank(&mut self, value: bool) {
-        self.inner3.set_intterupt_vblank(value);
+    fn set_interrupt_enable(&mut self, value: u8) {
+        self.inner3.set_interrupt_enable(value);
+    }
+
+    fn set_interrupt_flag(&mut self, value: u8) {
+        self.inner3.set_interrupt_flag(value);
+    }
+
+    fn set_interrupt_vblank(&mut self, value: bool) {
+        self.inner3.set_interrupt_vblank(value);
     }
 
     fn set_interrupt_lcd(&mut self, value: bool) {
@@ -346,7 +445,15 @@ impl Interrupt for Inner3 {
         self.interrupt.interrupt_enable()
     }
 
-    fn set_intterupt_vblank(&mut self, value: bool) {
+    fn set_interrupt_enable(&mut self, value: u8) {
+        self.interrupt.set_interrupt_enable(value);
+    }
+
+    fn set_interrupt_flag(&mut self, value: u8) {
+        self.interrupt.set_interrupt_flag(value);
+    }
+
+    fn set_interrupt_vblank(&mut self, value: bool) {
         self.interrupt.set_intterupt_vblank(value);
     }
 

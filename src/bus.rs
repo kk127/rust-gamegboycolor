@@ -1,14 +1,28 @@
-use log::warn;
+use log::{debug, warn};
 
 use crate::config::Config;
 use crate::{context, DeviceMode};
 
 trait Context:
-    context::Cartridge + context::Ppu + context::Apu + context::Config + context::Interrupt
+    context::Cartridge
+    + context::Ppu
+    + context::Apu
+    + context::Config
+    + context::Interrupt
+    + context::Joypad
+    + context::Timer
+    + context::Serial
 {
 }
 impl<T> Context for T where
-    T: context::Cartridge + context::Ppu + context::Apu + context::Config + context::Interrupt
+    T: context::Cartridge
+        + context::Ppu
+        + context::Apu
+        + context::Config
+        + context::Interrupt
+        + context::Joypad
+        + context::Timer
+        + context::Serial
 {
 }
 
@@ -48,7 +62,7 @@ impl Bus {
     }
 
     pub fn read(&mut self, context: &mut impl Context, address: u16) -> u8 {
-        match address {
+        let data = match address {
             0x0000..=0x7FFF => context.cartridge_read(address),
             0x8000..=0x9FFF => context.ppu_read(address),
             0xA000..=0xBFFF => context.cartridge_read(address),
@@ -67,11 +81,11 @@ impl Bus {
                 warn!("Invalid Bus Address: {:#06X}", address);
                 0xFF
             }
-            0xFF00 => todo!("Joypad"),
-            0xFF01..=0xFF02 => todo!("Serial"),
-            0xFF04..=0xFF07 => todo!("Timer"),
+            0xFF00 => context.joypad_read(),
+            0xFF01..=0xFF02 => context.serial_read(address),
+            0xFF04..=0xFF07 => context.timer_read(address),
             0xFF0F => context.interrupt_flag().into_bytes()[0],
-            0xFF10..=0xFF3F => todo!("APU"),
+            0xFF10..=0xFF3F => context.apu_read(address),
             0xFF40..=0xFF4B => context.ppu_read(address),
             0xFF4D => {
                 if context.device_mode() == DeviceMode::GameBoy {
@@ -108,13 +122,17 @@ impl Bus {
                 }
                 self.ff75
             }
+            0xFF76..=0xFF7F => context.apu_read(address),
             0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize],
             0xFFFF => context.interrupt_enable().into_bytes()[0],
             _ => unreachable!("Invalid Bus Address: {:#06X}", address),
-        }
+        };
+        debug!("Bus read: {:#06X} = {:#04X}", address, data);
+        data
     }
 
     pub fn write(&mut self, context: &mut impl Context, address: u16, value: u8) {
+        debug!("Bus write: {:#06X} = {:#04X}", address, value);
         match address {
             0x0000..=0x7FFF => context.cartridge_write(address, value),
             0x8000..=0x9FFF => context.ppu_write(address, value),
@@ -132,11 +150,11 @@ impl Bus {
             0xFEA0..=0xFEFF => {
                 warn!("Invalid Bus Address: {:#06X}", address);
             }
-            0xFF00 => todo!("Joypad"),
-            0xFF01..=0xFF02 => todo!("Serial"),
-            0xFF04..=0xFF07 => todo!("Timer"),
+            0xFF00 => context.joypad_write(value),
+            0xFF01..=0xFF02 => context.serial_write(address, value),
+            0xFF04..=0xFF07 => context.timer_write(address, value),
             0xFF0F => context.interrupt_flag().set_byte(value),
-            0xFF10..=0xFF3F => todo!("APU"),
+            0xFF10..=0xFF3F => context.apu_write(address, value),
             0xFF40..=0xFF4B => context.ppu_write(address, value),
             0xFF4D => {
                 if context.device_mode() == DeviceMode::GameBoy {
@@ -176,8 +194,16 @@ impl Bus {
                     self.ff75 = value & 0x70;
                 }
             }
+            0xFF76..=0xFF7F => context.apu_write(address, value),
             0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize] = value,
-            0xFFFF => context.interrupt_enable().set_byte(value),
+            0xFFFF => {
+                context.set_interrupt_enable(value);
+                debug!(
+                    "IE Set After: {:#04X}",
+                    context.interrupt_enable().into_bytes()[0]
+                );
+                debug!("IE Set After: {:?}", context.interrupt_enable());
+            }
             _ => unreachable!("Invalid Bus Address: {:#06X}", address),
         }
     }

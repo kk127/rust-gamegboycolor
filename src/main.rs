@@ -1,17 +1,38 @@
 use anyhow::{Context, Result};
-use rust_gameboycolor::{gameboycolor, DeviceMode};
+use rust_gameboycolor::{gameboycolor, DeviceMode, JoypadKey, JoypadKeyState, LinkCable};
 use sdl2::event::{self, Event};
 use sdl2::keyboard::Keycode;
+use sdl2::libc::kevent;
 use sdl2::pixels::Color;
 use std::env;
 use std::time;
+
+struct Cable {
+    buffer: Vec<u8>,
+}
+
+impl LinkCable for Cable {
+    fn send(&mut self, data: u8) {
+        self.buffer.push(data);
+        println!("buffer: {:?}", self.buffer);
+        println!("LinkCable send: {:#04X}", data);
+    }
+
+    fn try_recv(&mut self) -> Option<u8> {
+        None
+    }
+}
 
 fn main() -> Result<()> {
     env_logger::init();
 
     let file_path = env::args().nth(1).expect("No file path provided");
     let file = std::fs::read(file_path).unwrap();
-    let mut gameboy_color = gameboycolor::GameBoyColor::new(&file, DeviceMode::GameBoy)?;
+
+    let cable = Cable { buffer: Vec::new() };
+
+    let mut gameboy_color =
+        gameboycolor::GameBoyColor::new(&file, DeviceMode::GameBoy, Some(Box::new(cable)))?;
 
     let sdl2_context = sdl2::init()
         .map_err(|e| anyhow::anyhow!(e))
@@ -23,7 +44,7 @@ fn main() -> Result<()> {
         .context("Failed to initialize video subsystem")?;
 
     let window = video_subsystem
-        .window("rust-cgb", 160 * 5, 144 * 5)
+        .window("rust-cgb", 160 * 3, 144 * 3)
         .position_centered()
         .resizable()
         .build()
@@ -44,15 +65,58 @@ fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!(e))
         .context("Failed to get event pump")?;
 
+    let mut key_state = JoypadKeyState::new();
     'running: loop {
         // イベント処理
         for event in event_pump.poll_iter() {
             match event {
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
+                Event::Quit { .. } => break 'running,
+                Event::KeyDown {
+                    keycode: Some(keycode),
                     ..
-                } => break 'running,
+                } => match keycode {
+                    Keycode::Right => key_state.set_key(JoypadKey::Right, true),
+                    Keycode::Left => key_state.set_key(JoypadKey::Left, true),
+                    Keycode::Up => key_state.set_key(JoypadKey::Up, true),
+                    Keycode::Down => key_state.set_key(JoypadKey::Down, true),
+                    Keycode::X => key_state.set_key(JoypadKey::A, true),
+                    Keycode::Z => key_state.set_key(JoypadKey::B, true),
+                    Keycode::Space => key_state.set_key(JoypadKey::Select, true),
+                    Keycode::Return => key_state.set_key(JoypadKey::Start, true),
+                    _ => {}
+                },
+                Event::KeyUp {
+                    keycode: Some(keycode),
+                    ..
+                } => match keycode {
+                    Keycode::Right => key_state.set_key(JoypadKey::Right, false),
+                    Keycode::Left => key_state.set_key(JoypadKey::Left, false),
+                    Keycode::Up => key_state.set_key(JoypadKey::Up, false),
+                    Keycode::Down => key_state.set_key(JoypadKey::Down, false),
+                    Keycode::X => key_state.set_key(JoypadKey::A, false),
+                    Keycode::Z => key_state.set_key(JoypadKey::B, false),
+                    Keycode::Space => key_state.set_key(JoypadKey::Select, false),
+                    Keycode::Return => key_state.set_key(JoypadKey::Start, false),
+
+                    // Keycode::Right => key |= 1 << 0,
+                    // Keycode::Left => key |= 1 << 1,
+                    // Keycode::Up => key |= 1 << 2,
+                    // Keycode::Down => key |= 1 << 3,
+                    // Keycode::X => key |= 1 << 4,
+                    // Keycode::Z => key |= 1 << 5,
+                    // Keycode::Space => key |= 1 << 6,
+                    // Keycode::Return => key |= 1 << 7,
+
+                    // Keycode::Right => key &= !(1 << 0),
+                    // Keycode::Left => key &= !(1 << 1),
+                    // Keycode::Up => key &= !(1 << 2),
+                    // Keycode::Down => key &= !(1 << 3),
+                    // Keycode::X => key &= !(1 << 0),
+                    // Keycode::Z => key &= !(1 << 1),
+                    // Keycode::Space => key &= !(1 << 2),
+                    // Keycode::Return => key &= !(1 << 3),
+                    _ => {}
+                },
                 _ => {}
             }
         }
@@ -61,6 +125,7 @@ fn main() -> Result<()> {
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
         gameboy_color.execute_frame();
+        gameboy_color.set_key(key_state);
         for x in 0..160 {
             for y in 0..144 {
                 let index = y * 160 + x;
@@ -84,7 +149,8 @@ fn main() -> Result<()> {
 
         // 60 FPS
         let elapsed_time = start_time.elapsed();
-        if elapsed_time < time::Duration::from_millis(16) {
+        // if elapsed_time < time::Duration::from_millis(16) {
+        if elapsed_time < time::Duration::from_micros(16742) {
             std::thread::sleep(time::Duration::from_millis(16) - elapsed_time);
         }
     }

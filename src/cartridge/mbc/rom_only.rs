@@ -1,9 +1,8 @@
-use crate::cartridge::{Mbc, rom};
+use crate::cartridge::{rom, Mbc};
 
 pub struct RomOnly {
     rom: Vec<u8>,
 }
-
 
 impl Mbc for RomOnly {
     fn read(&self, address: u16) -> u8 {
@@ -17,6 +16,8 @@ impl Mbc for RomOnly {
 
 impl RomOnly {
     pub fn new(rom: rom::Rom) -> Self {
-        Self { rom: rom.data }
+        Self {
+            rom: rom.data().to_vec(),
+        }
     }
 }

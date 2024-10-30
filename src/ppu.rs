@@ -2,7 +2,6 @@ use crate::config::Speed;
 use crate::context;
 use crate::DeviceMode;
 use log::{debug, warn};
-use std::io::Write;
 
 use modular_bitfield::bitfield;
 use modular_bitfield::prelude::*;
@@ -110,7 +109,8 @@ impl Ppu {
             }
             0xFF4A => self.window_y = value,
             0xFF4B => self.window_x = value,
-            _ => unreachable!("Unreachable PPU write address: {:#06X}", address),
+            // _ => unreachable!("Unreachable PPU write address: {:#06X}", address),
+            _ => warn!("Invalid PPU write address: {:#06X}", address),
         }
     }
 
@@ -125,35 +125,86 @@ impl Ppu {
     }
 
     fn tick_pixel(&mut self, context: &mut impl Context) {
+        debug!(
+            "Frame: {}, LX: {}, LY: {}, Mode: {:?}",
+            self.frame, self.lx, self.ly, self.mode
+        );
+
+        self.update_lx_ly();
+
+        if !self.lcdc.lcd_enable() {
+            self.mode = PpuMode::HBlank;
+            return;
+        }
+
+        self.update_mode(context);
+        // self.lx += 1;
+        // if (0..144).contains(&self.ly) {
+        //     if self.lx == 80 {
+        //         self.mode = PpuMode::DataTransfer;
+        //         self.render_scanline();
+        //     } else if self.lx == 252 {
+        //         self.mode = PpuMode::HBlank;
+        //     } else if self.lx == 456 {
+        //         self.lx = 0;
+        //         self.ly += 1;
+        //         if self.ly == 144 {
+        //             self.mode = PpuMode::VBlank;
+        //             context.set_interrupt_vblank(true);
+        //         } else {
+        //             self.mode = PpuMode::OamSearch;
+        //         }
+        //     }
+        // } else {
+        //     if self.lx == 456 {
+        //         self.lx = 0;
+        //         self.ly += 1;
+        //         if self.ly == 154 {
+        //             self.ly = 0;
+        //             self.mode = PpuMode::OamSearch;
+        //             self.frame += 1;
+        //         }
+        //     }
+        // }
+        self.update_interrupt(context);
+    }
+
+    fn update_lx_ly(&mut self) {
         self.lx += 1;
-        if (0..144).contains(&self.ly) {
-            if self.lx == 80 {
-                self.mode = PpuMode::DataTransfer;
-                self.render_scanline();
-            } else if self.lx == 252 {
-                self.mode = PpuMode::HBlank;
-            } else if self.lx == 456 {
-                self.lx = 0;
-                self.ly += 1;
-                if self.ly == 144 {
-                    self.mode = PpuMode::VBlank;
-                    context.set_intterupt_vblank(true);
-                } else {
-                    self.mode = PpuMode::OamSearch;
-                }
-            }
-        } else {
-            if self.lx == 456 {
-                self.lx = 0;
-                self.ly += 1;
-                if self.ly == 154 {
-                    self.ly = 0;
-                    self.mode = PpuMode::OamSearch;
-                    self.frame += 1;
-                }
+        if self.lx == 456 {
+            self.lx = 0;
+            self.ly += 1;
+            if self.ly == 154 {
+                self.ly = 0;
+                self.frame += 1;
             }
         }
-        self.update_interrupt(context);
+    }
+
+    fn update_mode(&mut self, context: &mut impl Context) {
+        if (0..144).contains(&self.ly) {
+            if self.lx < 80 {
+                self.set_mode(PpuMode::OamSearch, context);
+            } else if self.lx < 252 {
+                self.set_mode(PpuMode::DataTransfer, context);
+            } else {
+                self.set_mode(PpuMode::HBlank, context);
+            }
+        } else {
+            self.set_mode(PpuMode::VBlank, context);
+        }
+    }
+
+    fn set_mode(&mut self, mode: PpuMode, context: &mut impl Context) {
+        if self.mode != mode {
+            if mode == PpuMode::VBlank {
+                context.set_interrupt_vblank(true);
+            } else if mode == PpuMode::DataTransfer {
+                self.render_scanline();
+            }
+        }
+
+        self.mode = mode;
     }
 
     fn render_scanline(&mut self) {
@@ -207,14 +258,16 @@ impl Ppu {
     }
 
     fn update_interrupt(&mut self, context: &mut impl Context) {
-        let cur_interrupt = match self.mode {
+        let mut cur_interrupt = match self.mode {
             PpuMode::HBlank => self.stat.hblank_interrupt(),
             PpuMode::VBlank => self.stat.vblank_interrupt(),
             PpuMode::OamSearch => self.stat.oam_interrupt(),
             PpuMode::DataTransfer => false,
         };
+        cur_interrupt |= self.stat.lyc_ly_coincidence_interrupt() && (self.ly == self.lyc);
 
         if !self.prev_interrupt && cur_interrupt {
+            debug!("Ppu Stat interrupt");
             context.set_interrupt_lcd(true);
         }
         self.prev_interrupt = cur_interrupt;
@@ -265,7 +318,7 @@ struct Stat {
     __: B1,
 }
 
-#[derive(BitfieldSpecifier, Debug, Clone, Copy, Default)]
+#[derive(BitfieldSpecifier, Debug, Clone, Copy, Default, Eq, PartialEq)]
 #[bits = 2]
 enum PpuMode {
     HBlank = 0,

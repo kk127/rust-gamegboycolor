@@ -3,8 +3,8 @@ use modular_bitfield::prelude::*;
 
 use log::debug;
 
-trait Context: context::Bus {}
-impl<T: context::Bus> Context for T {}
+trait Context: context::Bus + context::Interrupt {}
+impl<T: context::Bus + context::Interrupt> Context for T {}
 
 #[derive(Debug, Default)]
 pub struct Cpu {
@@ -38,8 +38,23 @@ impl Cpu {
 
 impl Cpu {
     pub fn execute_instruction(&mut self, context: &mut impl Context) {
-        let pc = self.registers.pc; // for debugging
+        if self.halt {
+            let interrupt_flag = context.interrupt_flag().into_bytes()[0];
+            let interrupt_enable = context.interrupt_enable().into_bytes()[0];
+            if interrupt_flag & interrupt_enable != 0 {
+                self.halt = false;
+            }
+            self.tick(context);
+            return;
+        }
+
+        let pc = self.registers.pc;
         let opcode = self.fetch_8(context);
+
+        if self.handle_interrupts(context, pc) {
+            return;
+        }
+
         match opcode {
             0x00 => self.nop(),
             0x01 => self.ld_r16_imm16(context, opcode),
@@ -84,6 +99,7 @@ impl Cpu {
             0x24 => self.inc_r8(context, opcode),
             0x25 => self.dec_r8(context, opcode),
             0x26 => self.ld_r8_imm8(context, opcode),
+            0x27 => self.daa(),
 
             0x28 => self.jr_cond_imm8(context, opcode),
             0x29 => self.add_hl_r16(context, opcode),
@@ -92,6 +108,7 @@ impl Cpu {
             0x2C => self.inc_r8(context, opcode),
             0x2D => self.dec_r8(context, opcode),
             0x2E => self.ld_r8_imm8(context, opcode),
+            0x2F => self.cpl(),
 
             0x30 => self.jr_cond_imm8(context, opcode),
             0x31 => self.ld_r16_imm16(context, opcode),
@@ -100,6 +117,7 @@ impl Cpu {
             0x34 => self.inc_r8(context, opcode),
             0x35 => self.dec_r8(context, opcode),
             0x36 => self.ld_r8_imm8(context, opcode),
+            0x37 => self.scf(),
 
             0x38 => self.jr_cond_imm8(context, opcode),
             0x39 => self.add_hl_r16(context, opcode),
@@ -108,6 +126,7 @@ impl Cpu {
             0x3C => self.inc_r8(context, opcode),
             0x3D => self.dec_r8(context, opcode),
             0x3E => self.ld_r8_imm8(context, opcode),
+            0x3F => self.ccf(),
 
             0x40..=0x7F => self.ld_r8_r8(context, opcode),
 
@@ -194,12 +213,53 @@ impl Cpu {
 
             _ => unreachable!("Invalid opcode: {:#04x}", opcode),
         }
-        debug!("Count: {:4}, Cycle: {}, PC: {:#06X}, opcode: {:#04X}, sp: {:#06X}, a: {:#04X}, b: {:#04X}, c: {:#04X}, d: {:#04X}, e: {:#04X}, h: {:#04X}, l: {:#04X}, {}{}{}{}", self.counter, self.clock, self.registers.pc, opcode, self.registers.sp, self.registers.a, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, 
+        debug!("Count: {:4}, Cycle: {}, IME: {}, PC: {:#06X}, opcode: {:#04X}, sp: {:#06X}, a: {:#04X}, b: {:#04X}, c: {:#04X}, d: {:#04X}, e: {:#04X}, h: {:#04X}, l: {:#04X}, {}{}{}{}", self.counter, self.clock, self.ime, self.registers.pc, opcode, self.registers.sp, self.registers.a, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, 
         if self.registers.f.zero() { "Z" } else { "z" },
         if self.registers.f.subtract() { "N" } else { "n" },
         if self.registers.f.half_carry() { "H" } else { "h" },
         if self.registers.f.carry() { "C" } else { "c" });
         self.counter += 1;
+    }
+
+    fn handle_interrupts(&mut self, context: &mut impl Context, pc: u16) -> bool {
+        if !self.ime {
+            return false;
+        }
+
+        let interrupt_flag: u8 = context.interrupt_flag().into_bytes()[0];
+        let interrupt_enable: u8 = context.interrupt_enable().into_bytes()[0];
+        if interrupt_flag & interrupt_enable == 0 {
+            return false;
+        }
+
+        let interrupt = (interrupt_flag & interrupt_enable).trailing_zeros();
+
+        self.ime = false;
+        self.push_16(pc, context);
+        context.set_interrupt_flag(interrupt_flag & !(1 << interrupt));
+        self.registers.pc = 0x0040 + interrupt as u16 * 0x08;
+        match interrupt {
+            0 => context.set_interrupt_vblank(false),
+            1 => context.set_interrupt_lcd(false),
+            2 => context.set_interrupt_timer(false),
+            3 => context.set_interrupt_serial(false),
+            4 => context.set_interrupt_joypad(false),
+            _ => unreachable!("Invalid interrupt: {}", interrupt),
+        }
+        self.tick(context);
+        self.tick(context);
+        self.tick(context);
+
+        debug!("Interrupt Occurred: {}", interrupt);
+        debug!(
+            "IE: {:#04X}, IF: {:#04X} -> {:#04X}",
+            interrupt_enable,
+            interrupt_flag,
+            context.interrupt_flag().into_bytes()[0]
+        );
+        debug!("Interrupt PC: {:#06X}", self.registers.pc);
+
+        true
     }
 
     fn nop(&mut self) {
@@ -412,6 +472,7 @@ impl Cpu {
 
     fn halt(&mut self) {
         self.halt = true;
+        debug!("Halt");
     }
 
     fn add_a_r8(&mut self, context: &mut impl Context, opcode: u8) {
@@ -627,7 +688,7 @@ impl Cpu {
         };
 
         if should_jump {
-            let address = self.fetch_16(context);
+            let address = self.pop_16(context);
             self.registers.pc = address;
             self.tick(context);
         }
@@ -956,6 +1017,47 @@ impl Cpu {
         self.ime = true;
     }
 
+    fn daa(&mut self) {
+        let mut a = self.registers.a;
+        if self.registers.f.subtract() {
+            if self.registers.f.carry() {
+                a = a.wrapping_sub(0x60);
+            }
+            if self.registers.f.half_carry() {
+                a = a.wrapping_sub(0x06);
+            }
+        } else {
+            if self.registers.f.carry() || a > 0x99 {
+                a = a.wrapping_add(0x60);
+                self.registers.f.set_carry(true);
+            }
+            if self.registers.f.half_carry() || (a & 0x0F) > 0x09 {
+                a = a.wrapping_add(0x06);
+            }
+        }
+        self.registers.f.set_zero(a == 0);
+        self.registers.f.set_half_carry(false);
+        self.registers.a = a;
+    }
+
+    fn cpl(&mut self) {
+        self.registers.a = !self.registers.a;
+        self.registers.f.set_subtract(true);
+        self.registers.f.set_half_carry(true);
+    }
+
+    fn scf(&mut self) {
+        self.registers.f.set_subtract(false);
+        self.registers.f.set_half_carry(false);
+        self.registers.f.set_carry(true);
+    }
+
+    fn ccf(&mut self) {
+        self.registers.f.set_subtract(false);
+        self.registers.f.set_half_carry(false);
+        self.registers.f.set_carry(!self.registers.f.carry());
+    }
+
     fn get_register8(&mut self, context: &mut impl Context, register: Register8) -> u8 {
         match register {
             Register8::B => self.registers.b,
@@ -1025,6 +1127,7 @@ impl Default for Registers {
 #[bitfield(bits = 8)]
 #[derive(Debug, Default)]
 struct Flags {
+    #[skip]
     __: B4,
     carry: bool,
     half_carry: bool,
@@ -1098,7 +1201,7 @@ impl Cpu {
 
     fn set_af(&mut self, value: u16) {
         self.registers.a = (value >> 8) as u8;
-        self.registers.f.bytes[0] = value as u8;
+        self.registers.f.bytes[0] = value as u8 & 0xF0;
     }
 
     fn get_bc(&self) -> u16 {

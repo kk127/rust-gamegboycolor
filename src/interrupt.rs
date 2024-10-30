@@ -9,7 +9,6 @@ pub struct Interrupt {
 
 impl Interrupt {
     pub fn new() -> Self {
-        warn!("Interrupts not implemented");
         Self {
             interrupt_flag: InterruptFlag::new(),
             interrupt_enable: InterruptEnable::new(),
@@ -20,33 +19,40 @@ impl Interrupt {
         self.interrupt_flag
     }
 
+    pub fn set_interrupt_enable(&mut self, value: u8) {
+        self.interrupt_enable = InterruptEnable::from_bytes([value]);
+    }
+
+    pub fn set_interrupt_flag(&mut self, value: u8) {
+        self.interrupt_flag = InterruptFlag::from_bytes([value]);
+    }
+
     pub fn interrupt_enable(&self) -> InterruptEnable {
         self.interrupt_enable
     }
 
-    pub fn set_intterupt_vblank(&mut self, value: bool) {
-        self.interrupt_flag.set_vblank(value);
+    pub fn set_intterupt_vblank(&mut self, flag: bool) {
+        self.interrupt_flag.set_vblank(flag);
     }
 
-    pub fn set_interrupt_lcd(&mut self, value: bool) {
-        self.interrupt_flag.set_lcd(value);
+    pub fn set_interrupt_lcd(&mut self, flag: bool) {
+        self.interrupt_flag.set_lcd(flag);
     }
 
-    pub fn set_interrupt_timer(&mut self, value: bool) {
-        self.interrupt_flag.set_timer(value);
+    pub fn set_interrupt_timer(&mut self, flag: bool) {
+        self.interrupt_flag.set_timer(flag);
     }
 
-    pub fn set_interrupt_serial(&mut self, value: bool) {
-        self.interrupt_flag.set_serial(value);
+    pub fn set_interrupt_serial(&mut self, flag: bool) {
+        self.interrupt_flag.set_serial(flag);
     }
 
-    pub fn set_interrupt_joypad(&mut self, value: bool) {
-        self.interrupt_flag.set_joypad(value);
+    pub fn set_interrupt_joypad(&mut self, flag: bool) {
+        self.interrupt_flag.set_joypad(flag);
     }
 }
 
 #[bitfield(bits = 8)]
-#[repr(u8)]
 #[derive(Debug, Clone, Copy)]
 pub struct InterruptFlag {
     vblank: bool,
@@ -74,10 +80,4 @@ pub struct InterruptEnable {
     joypad: bool,
     #[skip]
     __: B3,
-}
-
-impl InterruptEnable {
-    pub fn set_byte(&mut self, value: u8) {
-        *self = InterruptEnable::from_bytes([value]);
-    }
 }
