@@ -12,6 +12,10 @@ impl Mbc for RomOnly {
     fn write(&mut self, _address: u16, _value: u8) {
         // Do nothing
     }
+
+    fn save_data(&self) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 impl RomOnly {

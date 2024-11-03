@@ -27,6 +27,7 @@ impl Rom {
         let title = data[0x0134..=0x0143]
             .iter()
             .copied()
+            .take_while(|&c| c != 0)
             .filter(|&c| c.is_ascii())
             .map(|c| c as char)
             .collect::<String>();
@@ -139,6 +140,14 @@ impl Rom {
 
     pub fn ram_size(&self) -> usize {
         self.ram_size
+    }
+
+    pub fn have_ram(&self) -> bool {
+        self.cartridge_type.has_ram
+    }
+
+    pub fn title(&self) -> &str {
+        &self.title
     }
 }
 

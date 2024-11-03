@@ -1,7 +1,10 @@
+use core::error;
+
 use crate::cartridge::rom::{self, CgbFlag};
 use crate::config::DeviceMode;
 use crate::interface::LinkCable;
 use crate::joypad::JoypadKeyState;
+use crate::utils;
 use crate::{apu, bus, cartridge, config, cpu, interrupt, joypad, ppu, serial, timer};
 
 use thiserror::Error;
@@ -10,11 +13,16 @@ use thiserror::Error;
 pub enum EmulatorError {
     #[error("Unsupported mode: {0}")]
     UnsupportedMode(String),
+
+    #[error("Error loading save data: {0}")]
+    SaveDataError(#[from] std::io::Error),
 }
 
 pub struct Context {
     cpu: cpu::Cpu,
     inner1: Inner1,
+
+    rom_name: String,
 }
 
 impl Context {
@@ -30,8 +38,8 @@ impl Context {
             ));
         }
 
-        // TODO Implement read backups
-        let backup = None;
+        let rom_name = rom.title().to_string();
+        let backup = utils::load_save_data(&rom_name)?;
 
         let cartridge = cartridge::Cartridge::new(rom, backup);
         Ok(Self {
@@ -51,6 +59,7 @@ impl Context {
                     },
                 },
             },
+            rom_name,
         })
     }
 
@@ -72,6 +81,14 @@ impl Context {
     pub fn frame_buffer(&self) -> &[u8] {
         self.inner1.frame_buffer()
     }
+
+    pub fn save_data(&self) -> Option<Vec<u8>> {
+        self.inner1.save_data()
+    }
+
+    pub fn rom_name(&self) -> &str {
+        &self.rom_name
+    }
 }
 
 pub trait Bus {
@@ -84,6 +101,8 @@ pub trait Bus {
 pub trait Cartridge {
     fn cartridge_read(&self, address: u16) -> u8;
     fn cartridge_write(&mut self, address: u16, value: u8);
+
+    fn save_data(&self) -> Option<Vec<u8>>;
 }
 
 pub trait Ppu {
@@ -174,6 +193,10 @@ impl Cartridge for Inner1 {
 
     fn cartridge_write(&mut self, address: u16, value: u8) {
         self.inner2.cartridge_write(address, value);
+    }
+
+    fn save_data(&self) -> Option<Vec<u8>> {
+        self.inner2.save_data()
     }
 }
 
@@ -290,6 +313,10 @@ impl Cartridge for Inner2 {
 
     fn cartridge_write(&mut self, address: u16, value: u8) {
         self.cartridge.write(address, value);
+    }
+
+    fn save_data(&self) -> Option<Vec<u8>> {
+        self.cartridge.save_data()
     }
 }
 

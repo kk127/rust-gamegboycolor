@@ -64,12 +64,6 @@ pub struct InterruptFlag {
     __: B3,
 }
 
-impl InterruptFlag {
-    pub fn set_byte(&mut self, value: u8) {
-        *self = InterruptFlag::from_bytes([value]);
-    }
-}
-
 #[bitfield(bits = 8)]
 #[derive(Debug, Clone, Copy)]
 pub struct InterruptEnable {

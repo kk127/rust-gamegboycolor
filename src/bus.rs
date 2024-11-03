@@ -32,7 +32,7 @@ pub struct Bus {
     wram_bank: u8,
     hram: [u8; 0x7F],
 
-    dma_enable: bool,
+    dma: Dma,
 
     // CGB undocumented registers
     ff72: u8,
@@ -52,7 +52,7 @@ impl Bus {
             wram_bank: 1,
             hram: [0; 0x7F],
 
-            dma_enable: false,
+            dma: Dma::default(),
 
             ff72: 0,
             ff73: 0,
@@ -70,13 +70,7 @@ impl Bus {
                 let bank = address & 0x1000;
                 self.wram[((address & 0x0FFF) + bank * self.wram_bank as u16) as usize]
             }
-            0xFE00..=0xFE9F => {
-                if self.dma_enable {
-                    0xFF
-                } else {
-                    context.ppu_read(address)
-                }
-            }
+            0xFE00..=0xFE9F => context.ppu_read(address),
             0xFEA0..=0xFEFF => {
                 warn!("Invalid Bus Address: {:#06X}", address);
                 0xFF
@@ -86,7 +80,9 @@ impl Bus {
             0xFF04..=0xFF07 => context.timer_read(address),
             0xFF0F => context.interrupt_flag().into_bytes()[0],
             0xFF10..=0xFF3F => context.apu_read(address),
-            0xFF40..=0xFF4B => context.ppu_read(address),
+            0xFF40..=0xFF45 => context.ppu_read(address),
+            0xFF46 => self.dma.read(),
+            0xFF47..=0xFF4B => context.ppu_read(address),
             0xFF4D => {
                 if context.device_mode() == DeviceMode::GameBoy {
                     warn!("Read from FF4D in DMG mode");
@@ -95,7 +91,10 @@ impl Bus {
             }
             0xFF4F => context.ppu_read(address),
             0xFF50 => todo!("Boot ROM"),
-            0xFF51..=0xFF55 => todo!("HDMA"),
+            0xFF51..=0xFF55 => {
+                warn!("HDMA is not implemented");
+                0xFF
+            }
             0xFF68..=0xFF6B => context.ppu_read(address),
             0xFF70 => self.wram_bank,
             0xFF72 => {
@@ -125,7 +124,11 @@ impl Bus {
             0xFF76..=0xFF7F => context.apu_read(address),
             0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize],
             0xFFFF => context.interrupt_enable().into_bytes()[0],
-            _ => unreachable!("Invalid Bus Address: {:#06X}", address),
+            _ => {
+                // warn!("Invalid Bus Address: {:#06X}", address);
+                println!("Invalid Bus Address: {:#06X}", address);
+                0xFF
+            }
         };
         debug!("Bus read: {:#06X} = {:#04X}", address, data);
         data
@@ -143,9 +146,7 @@ impl Bus {
                 self.wram[wram_address as usize] = value;
             }
             0xFE00..=0xFE9F => {
-                if !self.dma_enable {
-                    context.ppu_write(address, value);
-                }
+                context.ppu_write(address, value);
             }
             0xFEA0..=0xFEFF => {
                 warn!("Invalid Bus Address: {:#06X}", address);
@@ -153,9 +154,11 @@ impl Bus {
             0xFF00 => context.joypad_write(value),
             0xFF01..=0xFF02 => context.serial_write(address, value),
             0xFF04..=0xFF07 => context.timer_write(address, value),
-            0xFF0F => context.interrupt_flag().set_byte(value),
+            0xFF0F => context.set_interrupt_flag(value),
             0xFF10..=0xFF3F => context.apu_write(address, value),
-            0xFF40..=0xFF4B => context.ppu_write(address, value),
+            0xFF40..=0xFF45 => context.ppu_write(address, value),
+            0xFF46 => self.dma.write(value),
+            0xFF47..=0xFF4B => context.ppu_write(address, value),
             0xFF4D => {
                 if context.device_mode() == DeviceMode::GameBoy {
                     warn!("Write to FF4D in DMG mode");
@@ -165,7 +168,13 @@ impl Bus {
             0xFF4F => context.ppu_write(address, value),
             0xFF50 => todo!("Boot ROM"),
             0xFF51..=0xFF55 => todo!("HDMA"),
-            0xFF56 => todo!("RP"),
+            0xFF56 => {
+                if context.device_mode() == DeviceMode::GameBoy {
+                    warn!("Write to FF56 in DMG mode");
+                } else {
+                    todo!("Write to FF56 in CGB mode");
+                }
+            }
             0xFF68..=0xFF6C => context.ppu_write(address, value),
             0xFF70 => self.wram_bank = (value & 0x07).max(1),
             0xFF72 => {
@@ -209,6 +218,45 @@ impl Bus {
     }
 
     pub fn tick(&mut self, context: &mut impl Context) {
-        warn!("Bus tick not implemented");
+        self.process_dma(context);
+    }
+
+    fn process_dma(&mut self, context: &mut impl Context) {
+        if !self.dma.enable {
+            return;
+        }
+
+        let source_address = (self.dma.upper_source_address as u16) << 8 | self.dma.counter as u16;
+        let destination_address = 0xFE00 + self.dma.counter as u16;
+        let data = self.read(context, source_address);
+        debug!(
+            "DMA Source: {:#04X} -> {:#04X}: {:#04X}",
+            source_address, destination_address, data
+        );
+        self.write(context, destination_address, data);
+
+        self.dma.counter = self.dma.counter.wrapping_add(1);
+        if self.dma.counter == 0xA0 {
+            self.dma.enable = false;
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct Dma {
+    upper_source_address: u8,
+    counter: u8,
+    enable: bool,
+}
+
+impl Dma {
+    fn write(&mut self, value: u8) {
+        self.upper_source_address = value;
+        self.counter = 0;
+        self.enable = true;
+    }
+
+    fn read(&self) -> u8 {
+        self.upper_source_address
     }
 }

@@ -213,11 +213,16 @@ impl Cpu {
 
             _ => unreachable!("Invalid opcode: {:#04x}", opcode),
         }
-        debug!("Count: {:4}, Cycle: {}, IME: {}, PC: {:#06X}, opcode: {:#04X}, sp: {:#06X}, a: {:#04X}, b: {:#04X}, c: {:#04X}, d: {:#04X}, e: {:#04X}, h: {:#04X}, l: {:#04X}, {}{}{}{}", self.counter, self.clock, self.ime, self.registers.pc, opcode, self.registers.sp, self.registers.a, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l, 
-        if self.registers.f.zero() { "Z" } else { "z" },
-        if self.registers.f.subtract() { "N" } else { "n" },
-        if self.registers.f.half_carry() { "H" } else { "h" },
-        if self.registers.f.carry() { "C" } else { "c" });
+        // debug!("Count: {:4}, Cycle: {}, IME: {}, PC: {:#06X}, opcode: {:#04X}, sp: {:#06X}, a: {:#04X}, b: {:#04X}, c: {:#04X}, d: {:#04X}, e: {:#04X}, h: {:#04X}, l: {:#04X}, {}{}{}{}", self.counter, self.clock, self.ime, self.registers.pc, opcode, self.registers.sp, self.registers.a, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l,
+        // if self.registers.f.zero() { "Z" } else { "z" },
+        // if self.registers.f.subtract() { "N" } else { "n" },
+        // if self.registers.f.half_carry() { "H" } else { "h" },
+        // if self.registers.f.carry() { "C" } else { "c" });
+        // println!("Count: {:4}, Cycle: {}, IME: {}, PC: {:#06X}, opcode: {:#04X}, sp: {:#06X}, a: {:#04X}, b: {:#04X}, c: {:#04X}, d: {:#04X}, e: {:#04X}, h: {:#04X}, l: {:#04X}, {}{}{}{}", self.counter, self.clock, self.ime, self.registers.pc, opcode, self.registers.sp, self.registers.a, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l,
+        // if self.registers.f.zero() { "Z" } else { "z" },
+        // if self.registers.f.subtract() { "N" } else { "n" },
+        // if self.registers.f.half_carry() { "H" } else { "h" },
+        // if self.registers.f.carry() { "C" } else { "c" });
         self.counter += 1;
     }
 
@@ -236,7 +241,7 @@ impl Cpu {
 
         self.ime = false;
         self.push_16(pc, context);
-        context.set_interrupt_flag(interrupt_flag & !(1 << interrupt));
+        // context.set_interrupt_flag(interrupt_flag & !(1 << interrupt));
         self.registers.pc = 0x0040 + interrupt as u16 * 0x08;
         match interrupt {
             0 => context.set_interrupt_vblank(false),
@@ -829,6 +834,9 @@ impl Cpu {
             .f
             .set_carry((sp & 0xFF) + (offset & 0xFF) > 0xFF);
         self.registers.sp = res;
+
+        self.tick(context);
+        self.tick(context);
     }
 
     fn ld_hl_sp_plus_imm8(&mut self, context: &mut impl Context) {

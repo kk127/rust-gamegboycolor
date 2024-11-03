@@ -61,7 +61,10 @@ impl Serial {
         }
 
         if let Some(link_cable) = &mut self.link_cable {
-            self.recv_buf = link_cable.try_recv();
+            if self.recv_buf.is_none() {
+                self.recv_buf = link_cable.try_recv();
+            }
+            // self.recv_buf = link_cable.try_recv();
         }
 
         let mut transfer_complete = false;
@@ -74,8 +77,9 @@ impl Serial {
             }
             ClockSelect::Internal => {
                 self.tick_counter += 1;
-                let tick_threshold = self.get_tick_threashold(context);
-                if self.tick_counter >= tick_threshold {
+                // let tick_threshold = self.get_tick_threashold(context);
+                // if self.tick_counter >= tick_threshold {
+                if self.tick_counter >= 128 {
                     self.tick_counter = 0;
                     self.transfer_pos += 1;
                     if self.transfer_pos >= 8 {
@@ -89,6 +93,7 @@ impl Serial {
         if transfer_complete {
             self.buf = self.recv_buf.unwrap_or(0xFF);
             self.recv_buf = None;
+            self.transfer_pos = 0;
             self.sc.set_transfer_requestted_or_progress(false);
             context.set_interrupt_serial(true);
         }

@@ -1,12 +1,14 @@
 mod mbc;
 pub mod rom;
 
-use std::{default, fmt};
 use mbc::{huc1, mbc1, mbc2, mbc3, mbc5, mbc6, rom_only};
+use std::{default, fmt};
 
 pub trait Mbc {
     fn read(&self, address: u16) -> u8;
     fn write(&mut self, address: u16, value: u8);
+
+    fn save_data(&self) -> Option<Vec<u8>>;
 }
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -53,7 +55,7 @@ pub enum Cartridge {
 }
 
 impl Cartridge {
-    pub fn new(rom: rom::Rom, backup: Option<&[u8]>) -> Self {
+    pub fn new(rom: rom::Rom, backup: Option<Vec<u8>>) -> Self {
         match rom.mbc_type() {
             MbcType::RomOnly => Cartridge::RomOnly(rom_only::RomOnly::new(rom)),
             MbcType::Mbc1 => Cartridge::Mbc1(mbc1::Mbc1::new(rom, backup)),
@@ -87,6 +89,18 @@ impl Cartridge {
             Cartridge::Mbc5(mbc) => mbc.write(address, value),
             Cartridge::Mbc6(mbc) => mbc.write(address, value),
             Cartridge::Huc1(mbc) => mbc.write(address, value),
+        }
+    }
+
+    pub fn save_data(&self) -> Option<Vec<u8>> {
+        match self {
+            Cartridge::RomOnly(rom) => rom.save_data(),
+            Cartridge::Mbc1(mbc) => mbc.save_data(),
+            Cartridge::Mbc2(mbc) => mbc.save_data(),
+            Cartridge::Mbc3(mbc) => mbc.save_data(),
+            Cartridge::Mbc5(mbc) => mbc.save_data(),
+            Cartridge::Mbc6(mbc) => mbc.save_data(),
+            Cartridge::Huc1(mbc) => mbc.save_data(),
         }
     }
 }

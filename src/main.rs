@@ -1,10 +1,14 @@
 use anyhow::{Context, Result};
-use rust_gameboycolor::{gameboycolor, DeviceMode, JoypadKey, JoypadKeyState, LinkCable};
+use rust_gameboycolor::utils;
+use rust_gameboycolor::{
+    gameboycolor, DeviceMode, JoypadKey, JoypadKeyState, LinkCable, NetworkCable,
+};
 use sdl2::event::{self, Event};
 use sdl2::keyboard::Keycode;
 use sdl2::libc::kevent;
 use sdl2::pixels::Color;
 use std::env;
+use std::path::{Path, PathBuf};
 use std::time;
 
 struct Cable {
@@ -27,12 +31,18 @@ fn main() -> Result<()> {
     env_logger::init();
 
     let file_path = env::args().nth(1).expect("No file path provided");
-    let file = std::fs::read(file_path).unwrap();
+    let file = std::fs::read(&file_path).unwrap();
 
-    let cable = Cable { buffer: Vec::new() };
+    // 第2引数: listen port
+    // 第3引数: send port
+    let listen_port = env::args().nth(2).expect("No listen port provided");
+    let send_port = env::args().nth(3).expect("No send port provided");
+
+    // let cable = Cable { buffer: Vec::new() };
+    let network_cable = NetworkCable::new(listen_port, send_port);
 
     let mut gameboy_color =
-        gameboycolor::GameBoyColor::new(&file, DeviceMode::GameBoy, Some(Box::new(cable)))?;
+        gameboycolor::GameBoyColor::new(&file, DeviceMode::GameBoy, Some(Box::new(network_cable)))?;
 
     let sdl2_context = sdl2::init()
         .map_err(|e| anyhow::anyhow!(e))
@@ -149,10 +159,13 @@ fn main() -> Result<()> {
 
         // 60 FPS
         let elapsed_time = start_time.elapsed();
-        // if elapsed_time < time::Duration::from_millis(16) {
         if elapsed_time < time::Duration::from_micros(16742) {
-            std::thread::sleep(time::Duration::from_millis(16) - elapsed_time);
+            std::thread::sleep(time::Duration::from_micros(16742) - elapsed_time);
         }
+    }
+
+    if let Some(save_data) = gameboy_color.save_data() {
+        utils::save_data(&gameboy_color.rom_name(), &save_data);
     }
 
     Ok(())

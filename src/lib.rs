@@ -11,8 +11,9 @@ mod joypad;
 mod ppu;
 mod serial;
 mod timer;
+pub mod utils;
 
 pub use crate::config::DeviceMode;
 pub use crate::gameboycolor::GameBoyColor;
-pub use crate::interface::LinkCable;
+pub use crate::interface::{LinkCable, NetworkCable};
 pub use crate::joypad::{JoypadKey, JoypadKeyState};
