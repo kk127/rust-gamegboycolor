@@ -78,48 +78,69 @@ impl Bus {
             0xFF00 => context.joypad_read(),
             0xFF01..=0xFF02 => context.serial_read(address),
             0xFF04..=0xFF07 => context.timer_read(address),
-            0xFF0F => context.interrupt_flag().into_bytes()[0],
+            0xFF0F => 0xE0 | context.interrupt_flag().into_bytes()[0],
             0xFF10..=0xFF3F => context.apu_read(address),
             0xFF40..=0xFF45 => context.ppu_read(address),
             0xFF46 => self.dma.read(),
             0xFF47..=0xFF4B => context.ppu_read(address),
+            0xFF4C => 0xFF, // KEY0
             0xFF4D => {
                 if context.device_mode() == DeviceMode::GameBoy {
                     warn!("Read from FF4D in DMG mode");
+                    0xFF
+                } else {
+                    context.get_speed_switch()
                 }
-                context.get_speed_switch()
             }
             0xFF4F => context.ppu_read(address),
-            0xFF50 => todo!("Boot ROM"),
+            0xFF50 => {
+                warn!("Boot ROM");
+                0xFF
+            }
             0xFF51..=0xFF55 => {
                 warn!("HDMA is not implemented");
                 0xFF
             }
             0xFF68..=0xFF6B => context.ppu_read(address),
-            0xFF70 => self.wram_bank,
+            0xFF70 => {
+                if context.device_mode() == DeviceMode::GameBoy {
+                    warn!("Read from FF70 in DMG mode");
+                    0xFF
+                } else {
+                    self.wram_bank
+                }
+            }
             0xFF72 => {
                 if context.device_mode() == DeviceMode::GameBoy {
                     warn!("Read CGB Undocumented Register : FF72");
+                    0xFF
+                } else {
+                    self.ff72
                 }
-                self.ff72
             }
             0xFF73 => {
                 if context.device_mode() == DeviceMode::GameBoy {
                     warn!("Read CGB Undocumented Register: FF73");
+                    0xFF
+                } else {
+                    self.ff73
                 }
-                self.ff73
             }
             0xFF74 => {
                 if context.device_mode() == DeviceMode::GameBoy {
                     warn!("Read CGB Undocumented Register: FF74");
+                    0xFF
+                } else {
+                    self.ff74
                 }
-                self.ff74
             }
             0xFF75 => {
                 if context.device_mode() == DeviceMode::GameBoy {
                     warn!("Read CGB Undocumented Register: FF75");
+                    0xFF
+                } else {
+                    self.ff75
                 }
-                self.ff75
             }
             0xFF76..=0xFF7F => context.apu_read(address),
             0xFF80..=0xFFFE => self.hram[(address - 0xFF80) as usize],
@@ -127,7 +148,7 @@ impl Bus {
             _ => {
                 // warn!("Invalid Bus Address: {:#06X}", address);
                 println!("Invalid Bus Address: {:#06X}", address);
-                0xFF
+                0x00
             }
         };
         debug!("Bus read: {:#06X} = {:#04X}", address, data);
@@ -166,8 +187,8 @@ impl Bus {
                 context.set_speed_switch(value);
             }
             0xFF4F => context.ppu_write(address, value),
-            0xFF50 => todo!("Boot ROM"),
-            0xFF51..=0xFF55 => todo!("HDMA"),
+            0xFF50 => warn!("Boot ROM not implemented"),
+            0xFF51..=0xFF55 => warn!("HDMA not implemented"),
             0xFF56 => {
                 if context.device_mode() == DeviceMode::GameBoy {
                     warn!("Write to FF56 in DMG mode");
@@ -213,7 +234,7 @@ impl Bus {
                 );
                 debug!("IE Set After: {:?}", context.interrupt_enable());
             }
-            _ => unreachable!("Invalid Bus Address: {:#06X}", address),
+            _ => warn!("Invalid Bus Address: {:#06X}", address),
         }
     }
 

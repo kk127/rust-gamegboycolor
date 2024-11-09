@@ -3,6 +3,7 @@ use rust_gameboycolor::utils;
 use rust_gameboycolor::{
     gameboycolor, DeviceMode, JoypadKey, JoypadKeyState, LinkCable, NetworkCable,
 };
+use sdl2::audio;
 use sdl2::event::{self, Event};
 use sdl2::keyboard::Keycode;
 use sdl2::libc::kevent;
@@ -18,8 +19,8 @@ struct Cable {
 impl LinkCable for Cable {
     fn send(&mut self, data: u8) {
         self.buffer.push(data);
-        println!("buffer: {:?}", self.buffer);
-        println!("LinkCable send: {:#04X}", data);
+        // println!("buffer: {:?}", self.buffer);
+        // println!("LinkCable send: {:#04X}", data);
     }
 
     fn try_recv(&mut self) -> Option<u8> {
@@ -41,6 +42,8 @@ fn main() -> Result<()> {
     // let cable = Cable { buffer: Vec::new() };
     let network_cable = NetworkCable::new(listen_port, send_port);
 
+    // let mut gameboy_color =
+    //     gameboycolor::GameBoyColor::new(&file, DeviceMode::GameBoy, Some(Box::new(cable)))?;
     let mut gameboy_color =
         gameboycolor::GameBoyColor::new(&file, DeviceMode::GameBoy, Some(Box::new(network_cable)))?;
 
@@ -69,6 +72,25 @@ fn main() -> Result<()> {
     canvas
         .set_logical_size(160, 144)
         .context("Failed to set logical size")?;
+
+    let audio_subsystem = sdl2_context
+        .audio()
+        .map_err(|e| anyhow::anyhow!(e))
+        .context("Failed to initialize SDL2 audio subsystem")?;
+    let desired_spec = sdl2::audio::AudioSpecDesired {
+        freq: Some(48_000),
+        channels: Some(2),
+        samples: Some(1024),
+    };
+    let audio_queue = audio_subsystem
+        .open_queue::<i16, _>(None, &desired_spec)
+        .map_err(|e| anyhow::anyhow!(e))
+        .context("Failed to open audio queue")?;
+    audio_queue
+        .queue_audio(&vec![0i16; 1024])
+        .map_err(|e| anyhow::anyhow!(e))
+        .context("Failed to queue audio")?;
+    audio_queue.resume();
 
     let mut event_pump = sdl2_context
         .event_pump()
@@ -156,6 +178,16 @@ fn main() -> Result<()> {
             }
         }
         canvas.present();
+
+        let audio_buffer = gameboy_color.audio_buffer();
+        println!("audio_buffer len: {}", audio_buffer.len());
+        // while audio_queue.size() > 1024 * 2 {
+        //     std::thread::sleep(time::Duration::from_millis(1));
+        // }
+        audio_queue
+            .queue_audio(&audio_buffer.iter().flatten().copied().collect::<Vec<i16>>())
+            .map_err(|e| anyhow::anyhow!(e))
+            .context("Failed to queue audio")?;
 
         // 60 FPS
         let elapsed_time = start_time.elapsed();

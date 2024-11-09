@@ -82,25 +82,25 @@ impl Mbc1 {
         let rom_bank_mask = (rom.rom_size() / 0x4000).saturating_sub(1) as u8;
         let ram_bank_mask = (rom.ram_size() / 0x2000).saturating_sub(1) as u8;
 
-        println!(
-            "ROM: size: {}, banks: {}, mask: {:b}",
-            rom.rom_size(),
-            rom.rom_size() / 0x4000,
-            rom_bank_mask
-        );
-        println!(
-            "RAM: size: {}, banks: {}, mask: {:b}",
-            rom.ram_size(),
-            rom.ram_size() / 0x2000,
-            ram_bank_mask
-        );
+        // println!(
+        //     "ROM: size: {}, banks: {}, mask: {:b}",
+        //     rom.rom_size(),
+        //     rom.rom_size() / 0x4000,
+        //     rom_bank_mask
+        // );
+        // println!(
+        //     "RAM: size: {}, banks: {}, mask: {:b}",
+        //     rom.ram_size(),
+        //     rom.ram_size() / 0x2000,
+        //     ram_bank_mask
+        // );
 
         Self {
             rom,
             ram,
             ram_enable: false,
             rom_bank: 1,
-            ram_bank_or_upper_rom_bank: 0,
+            ram_bank_or_upper_rom_bank: 1,
             rom_bank_mask,
             ram_bank_mask,
             banking_mode: false,

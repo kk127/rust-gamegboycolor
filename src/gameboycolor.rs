@@ -29,11 +29,16 @@ impl GameBoyColor {
     }
 
     pub fn execute_frame(&mut self) {
+        self.context.clear_audio_buffer();
         self.context.execute_frame();
     }
 
     pub fn frame_buffer(&self) -> &[u8] {
         self.context.frame_buffer()
+    }
+
+    pub fn audio_buffer(&self) -> &Vec<[i16; 2]> {
+        self.context.get_audio_buffer()
     }
 
     pub fn set_key(&mut self, key_state: JoypadKeyState) {

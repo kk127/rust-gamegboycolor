@@ -89,6 +89,14 @@ impl Context {
     pub fn rom_name(&self) -> &str {
         &self.rom_name
     }
+
+    pub fn get_audio_buffer(&self) -> &Vec<[i16; 2]> {
+        self.inner1.inner2.apu.get_audio_buffer()
+    }
+
+    pub fn clear_audio_buffer(&mut self) {
+        self.inner1.inner2.apu.clear_audio_buffer();
+    }
 }
 
 pub trait Bus {
@@ -119,7 +127,8 @@ pub trait Apu {
     fn apu_write(&mut self, address: u16, value: u8);
 
     fn apu_tick(&mut self);
-    fn audio_buffer(&self) -> &[u8];
+    fn audio_buffer(&self) -> &Vec<[i16; 2]>;
+    fn clear_audio_buffer(&mut self);
 }
 
 pub trait Timer {
@@ -180,7 +189,7 @@ impl Bus for Inner1 {
     fn tick(&mut self) {
         self.bus.tick(&mut self.inner2);
         self.inner2.ppu_tick();
-        // TODO Implement APU tick
+        self.inner2.apu_tick();
         self.inner2.timer_tick();
         self.inner2.serial_tick();
     }
@@ -235,8 +244,12 @@ impl Apu for Inner1 {
         self.inner2.apu_tick();
     }
 
-    fn audio_buffer(&self) -> &[u8] {
+    fn audio_buffer(&self) -> &Vec<[i16; 2]> {
         self.inner2.audio_buffer()
+    }
+
+    fn clear_audio_buffer(&mut self) {
+        self.inner2.clear_audio_buffer();
     }
 }
 
@@ -352,11 +365,15 @@ impl Apu for Inner2 {
     }
 
     fn apu_tick(&mut self) {
-        self.apu.tick();
+        self.apu.tick(&self.inner3);
     }
 
-    fn audio_buffer(&self) -> &[u8] {
-        self.apu.audio_buffer()
+    fn audio_buffer(&self) -> &Vec<[i16; 2]> {
+        self.apu.get_audio_buffer()
+    }
+
+    fn clear_audio_buffer(&mut self) {
+        self.apu.clear_audio_buffer();
     }
 }
 

@@ -213,6 +213,7 @@ impl Cpu {
 
             _ => unreachable!("Invalid opcode: {:#04x}", opcode),
         }
+
         // debug!("Count: {:4}, Cycle: {}, IME: {}, PC: {:#06X}, opcode: {:#04X}, sp: {:#06X}, a: {:#04X}, b: {:#04X}, c: {:#04X}, d: {:#04X}, e: {:#04X}, h: {:#04X}, l: {:#04X}, {}{}{}{}", self.counter, self.clock, self.ime, self.registers.pc, opcode, self.registers.sp, self.registers.a, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l,
         // if self.registers.f.zero() { "Z" } else { "z" },
         // if self.registers.f.subtract() { "N" } else { "n" },
@@ -241,7 +242,6 @@ impl Cpu {
 
         self.ime = false;
         self.push_16(pc, context);
-        // context.set_interrupt_flag(interrupt_flag & !(1 << interrupt));
         self.registers.pc = 0x0040 + interrupt as u16 * 0x08;
         match interrupt {
             0 => context.set_interrupt_vblank(false),
@@ -363,7 +363,8 @@ impl Cpu {
         self.registers.f.set_carry(carry);
         self.set_hl(res);
 
-        context.tick();
+        // context.tick();
+        self.tick(context);
     }
 
     fn inc_r8(&mut self, context: &mut impl Context, opcode: u8) {
@@ -1125,7 +1126,10 @@ impl Default for Registers {
             e: 0xD8,
             h: 0x01,
             l: 0x4D,
-            f: Flags::new(),
+            f: Flags::new()
+                .with_zero(true)
+                .with_half_carry(true)
+                .with_carry(true),
             pc: 0x100,
             sp: 0xFFFE,
         }
@@ -1145,8 +1149,9 @@ struct Flags {
 
 impl Cpu {
     fn read_8(&mut self, address: u16, context: &mut impl Context) -> u8 {
+        let data = context.read(address);
         self.tick(context);
-        context.read(address)
+        data
     }
 
     fn read_16(&mut self, address: u16, context: &mut impl Context) -> u16 {
@@ -1156,8 +1161,8 @@ impl Cpu {
     }
 
     fn write_8(&mut self, address: u16, value: u8, context: &mut impl Context) {
+        context.write(address, value);
         self.tick(context);
-        context.write(address, value)
     }
 
     fn write_16(&mut self, address: u16, value: u16, context: &mut impl Context) {

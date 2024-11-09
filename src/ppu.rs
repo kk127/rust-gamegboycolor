@@ -76,14 +76,18 @@ impl Ppu {
             0xFF47 => {
                 if context.device_mode() == DeviceMode::GameBoyColor {
                     warn!("Attempted to read from FF47 in CGB mode");
+                    0xFF
+                } else {
+                    self.bg_palette.into()
                 }
-                self.bg_palette.into()
             }
             0xFF48 | 0xFF49 => {
                 if context.device_mode() == DeviceMode::GameBoyColor {
                     warn!("Attempted to read from FF48 or FF49 in CGB mode");
+                    0xFF
+                } else {
+                    self.obj_palette[(address - 0xFF48) as usize].into()
                 }
-                self.obj_palette[(address - 0xFF48) as usize].into()
             }
             0xFF4A => self.window_y,
             0xFF4B => self.window_x,
@@ -103,7 +107,15 @@ impl Ppu {
         match address {
             0x8000..=0x9FFF => self.vram[(address - 0x8000) as usize] = value,
             0xFE00..=0xFE9F => self.oam[(address - 0xFE00) as usize] = value,
-            0xFF40 => self.lcdc = Lcdc::from(value),
+            0xFF40 => {
+                let new_lcdc = Lcdc::from(value);
+                if !self.lcdc.lcd_enable() && new_lcdc.lcd_enable() {
+                    self.lx = 0;
+                    self.ly = 0;
+                    self.frame += 1;
+                }
+                self.lcdc = new_lcdc;
+            }
             0xFF41 => self.stat = Stat::from(value & 0b0111_1100),
             0xFF42 => self.scy = value,
             0xFF43 => self.scx = value,

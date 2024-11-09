@@ -22,13 +22,13 @@ impl LinkCable for NetworkCable {
         match self.server_rx.try_recv() {
             Ok(data) => {
                 // println!("受信データ ◯: {}", data);
-                self.buffer = data;
+                // self.buffer = data;
                 Some(data)
             }
             Err(_) => {
                 // println!("受信データ ×: None");
-                Some(self.buffer)
-                // None
+                // Some(self.buffer)
+                None
             }
         }
     }

@@ -24,7 +24,9 @@ impl Config {
     }
 
     pub fn get_speed_switch(&self) -> u8 {
-        self.speed_switch.into()
+        let mut ret = self.speed_switch.into();
+        ret |= 0b0111_1110;
+        ret
     }
 
     pub fn current_speed(&self) -> Speed {
