@@ -43,8 +43,8 @@ impl Apu {
                 let offset = address - 0xFF10;
                 self.pulse[0].read(offset)
             }
-            0xFF16..=0xFF19 => {
-                let offset = address - 0xFF16;
+            0xFF15..=0xFF19 => {
+                let offset = address - 0xFF15;
                 self.pulse[1].read(offset)
             }
             0xFF24 => self.master_volume.bytes[0],
@@ -79,8 +79,8 @@ impl Apu {
                 let offset = address - 0xFF10;
                 self.pulse[0].write(offset, value);
             }
-            0xFF16..=0xFF19 => {
-                let offset = address - 0xFF16;
+            0xFF15..=0xFF19 => {
+                let offset = address - 0xFF15;
                 self.pulse[1].write(offset, value);
             }
             0xFF24 => self.master_volume = MasterVolume::from_bytes([value]),
