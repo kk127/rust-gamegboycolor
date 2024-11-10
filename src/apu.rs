@@ -153,20 +153,20 @@ impl Apu {
         ];
         let mut output = [0, 0];
 
-        for i in 0..2 {
+        for (i, out) in output.iter_mut().enumerate() {
             for (ch_idx, ch_output) in channel_output.iter().enumerate() {
                 if self.panning[i][ch_idx] {
-                    output[i] += *ch_output as i32;
+                    *out += *ch_output as i32;
                 }
             }
             if i == 0 {
-                output[i] = (output[i] * self.master_volume.left_volume() as i32) >> 3;
+                *out = (*out * self.master_volume.left_volume() as i32) >> 3;
             } else {
-                output[i] = (output[i] * self.master_volume.right_volume() as i32) >> 3;
+                *out = (*out * self.master_volume.right_volume() as i32) >> 3;
             }
         }
 
-        [output[0] as i16, output[1] as i16]
+        [output[1] as i16, output[0] as i16]
     }
 
     pub fn get_audio_buffer(&self) -> &Vec<[i16; 2]> {
@@ -470,7 +470,8 @@ impl Wave {
     }
 }
 
-static DIVISOR: [u16; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
+// static DIVISOR: [u16; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
+static DIVISOR: [u16; 8] = [4, 8, 16, 24, 32, 40, 48, 56];
 
 #[derive(Debug, Default)]
 struct Noise {
@@ -487,7 +488,7 @@ struct Noise {
     length_enable: bool,
 
     current_volume: u8,
-    frequency_timer: u16,
+    frequency_timer: u32,
 }
 
 impl Noise {
@@ -551,13 +552,15 @@ impl Noise {
         };
         self.current_volume = self.initial_volume;
         self.lsfr = 0x7FFF;
-        self.frequency_timer = DIVISOR[self.divisor_code as usize] << (self.clock_shift + 1);
+        self.frequency_timer =
+            DIVISOR[self.divisor_code as usize] as u32 * 2u32.pow(self.clock_shift as u32 + 1);
     }
 
     fn tick(&mut self, should_length_tick: bool, should_envelope_tick: bool) {
         self.frequency_timer = self.frequency_timer.saturating_sub(1);
         if self.frequency_timer == 0 {
-            self.frequency_timer = DIVISOR[self.divisor_code as usize] << (self.clock_shift + 1);
+            self.frequency_timer =
+                DIVISOR[self.divisor_code as usize] as u32 * 2u32.pow(self.clock_shift as u32 + 1);
 
             let feedback = (self.lsfr & 1) ^ ((self.lsfr >> 1) & 1);
             self.lsfr = (self.lsfr >> 1) | (feedback << 14);
@@ -578,9 +581,6 @@ impl Noise {
     fn output(&mut self) -> i16 {
         if self.is_on {
             let sample = (self.lsfr & 1) ^ 1;
-
-            // (((sample as i32 / sample_counter as i32 * 512) - 256) * self.current_volume as i32)
-            //     as i16
             (sample as i16 * 2 - 1) * self.current_volume as i16 * 256
         } else {
             0
@@ -606,20 +606,6 @@ impl Noise {
             }
         }
     }
-    // fn envelope_tick(&mut self) {
-    //     if self.envelope_period != 0 {
-    //         if self.envelope_timer > 0 {
-    //             self.envelope_timer -= 1;
-    //         }
-    //         if self.envelope_timer == 0 {
-    //             self.envelope_timer = self.envelope_period;
-    //             self.current_volume = match self.envelope_direction {
-    //                 EnvelopeDirection::Decrease => self.current_volume.saturating_sub(1),
-    //                 EnvelopeDirection::Increase => (self.current_volume + 1).min(15),
-    //             };
-    //         }
-    //     }
-    // }
 }
 
 #[bitfield(bits = 8)]
