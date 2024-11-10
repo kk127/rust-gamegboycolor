@@ -30,6 +30,8 @@ impl Apu {
     pub fn new() -> Self {
         Self {
             pulse: [Pulse::new(), Pulse::new()],
+            wave: Wave::new(),
+            noise: Noise::new(),
 
             frame_sequencer: FrameSequencer::new(), // 512 Hz
 
@@ -43,10 +45,12 @@ impl Apu {
                 let offset = address - 0xFF10;
                 self.pulse[0].read(offset)
             }
-            0xFF15..=0xFF19 => {
+            0xFF16..=0xFF19 => {
                 let offset = address - 0xFF15;
                 self.pulse[1].read(offset)
             }
+            0xFF1A..=0xFF1E => self.wave.read(address),
+            0xFF20..=0xFF23 => self.noise.read(address),
             0xFF24 => self.master_volume.bytes[0],
             0xFF25 => {
                 let mut ret = 0;
@@ -66,6 +70,11 @@ impl Apu {
                 ret |= (self.is_on as u8) << 7;
                 ret
             }
+
+            0xFF30..=0xFF3F => {
+                let offset = (address - 0xFF30) as usize;
+                self.wave.ram[offset]
+            }
             _ => {
                 warn!("Apu read not implemented: {:#06X}", address);
                 0x00
@@ -79,10 +88,12 @@ impl Apu {
                 let offset = address - 0xFF10;
                 self.pulse[0].write(offset, value);
             }
-            0xFF15..=0xFF19 => {
+            0xFF16..=0xFF19 => {
                 let offset = address - 0xFF15;
                 self.pulse[1].write(offset, value);
             }
+            0xFF1A..=0xFF1E => self.wave.write(address, value),
+            0xFF20..=0xFF23 => self.noise.write(address, value),
             0xFF24 => self.master_volume = MasterVolume::from_bytes([value]),
             0xFF25 => {
                 for i in 0..2 {
@@ -92,6 +103,10 @@ impl Apu {
                 }
             }
             0xFF26 => self.is_on = (value >> 7) & 1 == 1,
+            0xFF30..=0xFF3F => {
+                let offset = (address - 0xFF30) as usize;
+                self.wave.ram[offset] = value;
+            }
             _ => warn!("Apu write not implemented: {:#06X}", address),
         }
     }
@@ -106,15 +121,15 @@ impl Apu {
         }
     }
 
-    pub fn tick_(&mut self) {
+    fn tick_(&mut self) {
         if self.is_on {
             let (should_length_tick, should_volume_tick, should_sweep_tick) =
                 self.frame_sequencer.tick();
 
             self.pulse[0].tick(should_length_tick, should_volume_tick, should_sweep_tick);
             self.pulse[1].tick(should_length_tick, should_volume_tick, false);
-            // self.wave.tick();
-            // self.noise.tick();
+            self.wave.tick(should_length_tick);
+            self.noise.tick(should_length_tick, should_volume_tick);
         }
 
         self.sample_counter += SAMPLE_PER_FRAME;
@@ -125,7 +140,7 @@ impl Apu {
         }
     }
 
-    fn mix_output(&self) -> [i16; 2] {
+    fn mix_output(&mut self) -> [i16; 2] {
         if !self.is_on {
             return [0, 0];
         }
@@ -133,25 +148,25 @@ impl Apu {
         let channel_output = [
             self.pulse[0].output(),
             self.pulse[1].output(),
-            // self.wave.output(),
-            // self.noise.output(),
+            self.wave.output(),
+            self.noise.output(),
         ];
         let mut output = [0, 0];
 
         for i in 0..2 {
             for (ch_idx, ch_output) in channel_output.iter().enumerate() {
                 if self.panning[i][ch_idx] {
-                    output[i] += ch_output;
+                    output[i] += *ch_output as i32;
                 }
             }
             if i == 0 {
-                output[i] = (output[i] * self.master_volume.left_volume() as i16) >> 3;
+                output[i] = (output[i] * self.master_volume.left_volume() as i32) >> 3;
             } else {
-                output[i] = (output[i] * self.master_volume.right_volume() as i16) >> 3;
+                output[i] = (output[i] * self.master_volume.right_volume() as i32) >> 3;
             }
         }
 
-        output
+        [output[0] as i16, output[1] as i16]
     }
 
     pub fn get_audio_buffer(&self) -> &Vec<[i16; 2]> {
@@ -201,7 +216,7 @@ impl Pulse {
 
     fn read(&self, offset: u16) -> u8 {
         match offset {
-            0 => self.sweep.bytes[0],
+            0 => 0x80 | self.sweep.bytes[0],
             1 => self.wave_duty << 6 | 0x3F,
             2 => {
                 (self.initial_volume << 4)
@@ -252,7 +267,7 @@ impl Pulse {
             self.phase = (self.phase + 1) % 8;
         }
 
-        if should_length_tick {
+        if should_length_tick && self.length_enable {
             self.length_tick();
         }
         if should_volume_tick {
@@ -264,8 +279,8 @@ impl Pulse {
     }
 
     fn length_tick(&mut self) {
-        self.length_timer = (self.length_timer + 1).min(64);
-        if self.length_timer == 64 {
+        self.length_timer = self.length_timer.saturating_sub(1);
+        if self.length_timer == 0 {
             self.is_on = false;
         }
     }
@@ -354,6 +369,16 @@ impl Pulse {
 #[derive(Debug, Default)]
 struct Wave {
     is_on: bool,
+    dac_enable: bool,
+    length_timer: u16,
+    output_level: u8,
+    frequency: u16,
+    length_enable: bool,
+    ram: [u8; 16],
+
+    frequency_timer: u16,
+    ram_index: usize,
+    current_sample: u8,
 }
 
 impl Wave {
@@ -364,41 +389,237 @@ impl Wave {
     }
 
     fn read(&self, address: u16) -> u8 {
-        todo!()
+        match address {
+            0xFF1A => (self.dac_enable as u8) << 7 | 0x7F,
+            0xFF1B => 0xFF,
+            0xFF1C => self.output_level << 5 | 0x9F,
+            0xFF1D => 0xFF,
+            0xFF1E => (self.length_enable as u8) << 6 | 0xBF,
+            _ => unreachable!("Wave invalid read address: {:#06X}", address),
+        }
     }
 
     fn write(&mut self, address: u16, value: u8) {
-        todo!()
+        match address {
+            0xFF1A => self.dac_enable = (value >> 7) & 1 == 1,
+            0xFF1B => self.length_timer = 256 - value as u16,
+            0xFF1C => self.output_level = (value >> 5) & 3,
+            0xFF1D => self.frequency = (self.frequency & 0x0700) | value as u16,
+            0xFF1E => {
+                self.frequency = (self.frequency & 0x00FF) | ((value as u16 & 0x07) << 8);
+                self.length_enable = (value >> 6) & 1 == 1;
+                if value >> 7 & 1 == 1 {
+                    self.trigger();
+                }
+            }
+            _ => unreachable!("Wave invalid write address: {:#06X}", address),
+        }
+    }
+
+    fn trigger(&mut self) {
+        self.is_on = self.dac_enable;
+        if self.length_timer == 0 {
+            self.length_timer = 256;
+        }
+        self.frequency_timer = (2048 - self.frequency) * 2;
+        self.ram_index = 0;
+    }
+
+    fn tick(&mut self, should_length_tick: bool) {
+        self.frequency_timer = self.frequency_timer.saturating_sub(1);
+        if self.frequency_timer == 0 {
+            self.frequency_timer = (2048 - self.frequency) * 2;
+            self.ram_index = (self.ram_index + 1) % 32;
+            if self.ram_index % 2 == 0 {
+                self.current_sample = self.ram[self.ram_index / 2] >> 4;
+            } else {
+                self.current_sample = self.ram[self.ram_index / 2] & 0x0F;
+            }
+        }
+
+        if self.length_enable && should_length_tick {
+            self.length_tick();
+        }
     }
 
     fn length_tick(&mut self) {
-        todo!()
+        self.length_timer = self.length_timer.saturating_sub(1);
+        if self.length_timer == 0 {
+            self.is_on = false;
+        }
+    }
+
+    fn output(&self) -> i16 {
+        if self.is_on {
+            let sample = self.current_sample as i16 * 2 - 15;
+            let volume = self.volume() as i16;
+            sample * 256 * volume / 4
+        } else {
+            0
+        }
+    }
+
+    fn volume(&self) -> u8 {
+        match self.output_level {
+            0 => 0,
+            1 => 4,
+            2 => 2,
+            3 => 1,
+            _ => unreachable!("Invalid Wave output level: {}", self.output_level),
+        }
     }
 }
+
+static DIVISOR: [u16; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
 
 #[derive(Debug, Default)]
 struct Noise {
     is_on: bool,
+    length_timer: u8,
+    initial_volume: u8,
+    envelope_period: u8,
+    envelope_timer: u8,
+    envelope_direction: EnvelopeDirection,
+    clock_shift: u8,
+    is_lfsr_width_mode: bool,
+    lsfr: u16,
+    divisor_code: u8,
+    length_enable: bool,
+
+    current_volume: u8,
+    frequency_timer: u16,
 }
 
 impl Noise {
     fn new() -> Self {
         Self {
+            lsfr: 0x7FFF,
             ..Default::default()
         }
     }
 
     fn read(&self, address: u16) -> u8 {
-        todo!()
+        match address {
+            0xFF20 => 0xFF,
+            0xFF21 => {
+                (self.initial_volume << 4)
+                    | (self.envelope_direction as u8) << 3
+                    | self.envelope_period
+            }
+            0xFF22 => {
+                (self.clock_shift << 4) | (self.is_lfsr_width_mode as u8) << 3 | self.divisor_code
+            }
+            0xFF23 => (self.length_enable as u8) << 6 | 0xBF,
+            _ => unreachable!("Noise invalid read address: {:#06X}", address),
+        }
     }
 
     fn write(&mut self, address: u16, value: u8) {
-        todo!()
+        match address {
+            0xFF20 => self.length_timer = 64 - (value & 0x3F),
+            0xFF21 => {
+                self.envelope_period = value & 0x07;
+                self.envelope_direction = EnvelopeDirection::from(value >> 3 & 1);
+                self.initial_volume = value >> 4;
+            }
+            0xFF22 => {
+                self.divisor_code = value & 0x07;
+                self.is_lfsr_width_mode = (value >> 3) & 1 == 1;
+                self.clock_shift = value >> 4;
+            }
+            0xFF23 => {
+                self.length_enable = (value >> 6) & 1 == 1;
+                if value >> 7 & 1 == 1 {
+                    self.trigger();
+                }
+            }
+            _ => unreachable!("Noise invalid write address: {:#06X}", address),
+        }
+    }
+
+    fn trigger(&mut self) {
+        self.is_on =
+            self.initial_volume != 0 || self.envelope_direction == EnvelopeDirection::Increase;
+        if self.length_timer == 0 {
+            self.length_timer = 64;
+        }
+
+        self.envelope_timer = if self.envelope_period == 0 {
+            8
+        } else {
+            self.envelope_period
+        };
+        self.current_volume = self.initial_volume;
+        self.lsfr = 0x7FFF;
+        self.frequency_timer = DIVISOR[self.divisor_code as usize] << (self.clock_shift + 1);
+    }
+
+    fn tick(&mut self, should_length_tick: bool, should_envelope_tick: bool) {
+        self.frequency_timer = self.frequency_timer.saturating_sub(1);
+        if self.frequency_timer == 0 {
+            self.frequency_timer = DIVISOR[self.divisor_code as usize] << (self.clock_shift + 1);
+
+            let feedback = (self.lsfr & 1) ^ ((self.lsfr >> 1) & 1);
+            self.lsfr = (self.lsfr >> 1) | (feedback << 14);
+            if self.is_lfsr_width_mode {
+                self.lsfr = (self.lsfr & !(1 << 6)) | (feedback << 6);
+            }
+        }
+
+        if should_length_tick && self.length_enable {
+            self.length_tick();
+        }
+
+        if should_envelope_tick {
+            self.envelope_tick();
+        }
+    }
+
+    fn output(&mut self) -> i16 {
+        if self.is_on {
+            let sample = (self.lsfr & 1) ^ 1;
+
+            // (((sample as i32 / sample_counter as i32 * 512) - 256) * self.current_volume as i32)
+            //     as i16
+            (sample as i16 * 2 - 1) * self.current_volume as i16 * 256
+        } else {
+            0
+        }
     }
 
     fn length_tick(&mut self) {
-        todo!()
+        self.length_timer = self.length_timer.saturating_sub(1);
+        if self.length_timer == 0 {
+            self.is_on = false;
+        }
     }
+
+    fn envelope_tick(&mut self) {
+        if self.envelope_timer > 0 {
+            self.envelope_timer -= 1;
+            if self.envelope_timer == 0 && self.envelope_period != 0 {
+                self.envelope_timer = self.envelope_period;
+                self.current_volume = match self.envelope_direction {
+                    EnvelopeDirection::Decrease => self.current_volume.saturating_sub(1),
+                    EnvelopeDirection::Increase => (self.current_volume + 1).min(15),
+                };
+            }
+        }
+    }
+    // fn envelope_tick(&mut self) {
+    //     if self.envelope_period != 0 {
+    //         if self.envelope_timer > 0 {
+    //             self.envelope_timer -= 1;
+    //         }
+    //         if self.envelope_timer == 0 {
+    //             self.envelope_timer = self.envelope_period;
+    //             self.current_volume = match self.envelope_direction {
+    //                 EnvelopeDirection::Decrease => self.current_volume.saturating_sub(1),
+    //                 EnvelopeDirection::Increase => (self.current_volume + 1).min(15),
+    //             };
+    //         }
+    //     }
+    // }
 }
 
 #[bitfield(bits = 8)]

@@ -80,7 +80,7 @@ fn main() -> Result<()> {
     let desired_spec = sdl2::audio::AudioSpecDesired {
         freq: Some(48_000),
         channels: Some(2),
-        samples: Some(1024),
+        samples: Some(800),
     };
     let audio_queue = audio_subsystem
         .open_queue::<i16, _>(None, &desired_spec)
@@ -156,8 +156,8 @@ fn main() -> Result<()> {
         let start_time = time::Instant::now();
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
-        gameboy_color.execute_frame();
         gameboy_color.set_key(key_state);
+        gameboy_color.execute_frame();
         for x in 0..160 {
             for y in 0..144 {
                 let index = y * 160 + x;
@@ -180,20 +180,19 @@ fn main() -> Result<()> {
         canvas.present();
 
         let audio_buffer = gameboy_color.audio_buffer();
-        println!("audio_buffer len: {}", audio_buffer.len());
-        // while audio_queue.size() > 1024 * 2 {
-        //     std::thread::sleep(time::Duration::from_millis(1));
-        // }
+        while audio_queue.size() > 1600 {
+            std::thread::sleep(time::Duration::from_micros(100));
+        }
         audio_queue
             .queue_audio(&audio_buffer.iter().flatten().copied().collect::<Vec<i16>>())
             .map_err(|e| anyhow::anyhow!(e))
             .context("Failed to queue audio")?;
 
         // 60 FPS
-        let elapsed_time = start_time.elapsed();
-        if elapsed_time < time::Duration::from_micros(16742) {
-            std::thread::sleep(time::Duration::from_micros(16742) - elapsed_time);
-        }
+        // let elapsed_time = start_time.elapsed();
+        // if elapsed_time < time::Duration::from_micros(16666) {
+        //     std::thread::sleep(time::Duration::from_micros(16666) - elapsed_time);
+        // }
     }
 
     if let Some(save_data) = gameboy_color.save_data() {
