@@ -81,7 +81,6 @@ impl Timer {
             tac_threshold /= 2;
         }
 
-        // self.tima_counter += 1;
         self.tima_counter = self.tima_counter.wrapping_add(1);
         if self.tima_counter == tac_threshold {
             self.tima_counter = 0;

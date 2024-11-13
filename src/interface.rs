@@ -21,7 +21,7 @@ impl LinkCable for NetworkCable {
     fn try_recv(&mut self) -> Option<u8> {
         match self.server_rx.try_recv() {
             Ok(data) => {
-                // println!("受信データ ◯: {}", data);
+                println!("受信データ ◯: {}", data);
                 // self.buffer = data;
                 Some(data)
             }
@@ -74,15 +74,22 @@ impl NetworkCable {
 
     fn handle_client(stream: &mut TcpStream, tx: Sender<u8>) {
         let mut buffer = [0];
+        // let mut buffer = Vec::new();
         loop {
             match stream.read(&mut buffer) {
+                // match stream.read_to_end(&mut buffer) {
                 Ok(0) => {
                     println!("client disconnected");
                     break;
                 }
                 Ok(n) => {
                     let data = buffer[..n].to_vec();
-                    tx.send(data[0]).unwrap();
+                    // bufferの最後のu8
+                    println!("受信データ: {:?}", buffer);
+                    println!("長さ: {}", n);
+                    // let data = buffer[n - 1];
+                    tx.send(data[n - 1]).unwrap();
+                    // tx.send(data).unwrap();
                 }
                 Err(e) => {
                     println!("failed to read from socket; error = {:?}", e);

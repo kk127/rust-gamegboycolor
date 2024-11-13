@@ -411,7 +411,7 @@ impl Serial for Inner2 {
     }
 
     fn serial_write(&mut self, address: u16, value: u8) {
-        self.serial.write(address, value);
+        self.serial.write(address, value, &mut self.inner3);
     }
 
     fn serial_tick(&mut self) {
