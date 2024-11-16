@@ -33,7 +33,7 @@ impl GameBoyColor {
         self.context.execute_frame();
     }
 
-    pub fn frame_buffer(&self) -> &[u8] {
+    pub fn frame_buffer(&self) -> &[(u8, u8, u8)] {
         self.context.frame_buffer()
     }
 

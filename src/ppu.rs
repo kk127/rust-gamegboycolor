@@ -14,23 +14,23 @@ pub struct Ppu {
     vram: Vec<u8>,
     vram_bank: u8,
     oam: Vec<u8>,
-    frame_buffer: Vec<u8>,
+    frame_buffer: Vec<(u8, u8, u8)>,
     line_info: Vec<Option<PixelInfo>>,
 
     lx: u16,
     mode: PpuMode,
     prev_interrupt: bool,
 
-    lcdc: Lcdc,                // FF40
-    stat: Stat,                // FF41
-    scy: u8,                   // FF42
-    scx: u8,                   // FF43
-    ly: u8,                    // FF44
-    lyc: u8,                   // FF45
-    bg_palette: Palette,       // FF47 Non-CGB Mode Only
-    obj_palette: [Palette; 2], // FF48, FF49 Non-CGB Mode Only
-    window_y: u8,              // FF4A
-    window_x: u8,              // FF4B
+    lcdc: Lcdc,                          // FF40
+    stat: Stat,                          // FF41
+    scy: u8,                             // FF42
+    scx: u8,                             // FF43
+    ly: u8,                              // FF44
+    lyc: u8,                             // FF45
+    bg_palette: MonochromePalette,       // FF47 Non-CGB Mode Only
+    obj_palette: [MonochromePalette; 2], // FF48, FF49 Non-CGB Mode Only
+    window_y: u8,                        // FF4A
+    window_x: u8,                        // FF4B
     window_line_counter: u8,
 
     bg_color_palette: ColorPalette,
@@ -48,7 +48,7 @@ impl Ppu {
             DeviceMode::GameBoyColor => vec![0; 0x4000],
         };
         let oam = vec![0; 0xA0];
-        let frame_buffer = vec![0; 160 * 144];
+        let frame_buffer = vec![(0, 0, 0); 160 * 144];
         let line_info = vec![None; 160];
         Self {
             vram,
@@ -81,7 +81,7 @@ impl Ppu {
                     warn!("Attempted to read from FF47 in CGB mode");
                     0xFF
                 } else {
-                    self.bg_palette.into()
+                    self.bg_palette.bytes[0]
                 }
             }
             0xFF48 | 0xFF49 => {
@@ -89,7 +89,7 @@ impl Ppu {
                     warn!("Attempted to read from FF48 or FF49 in CGB mode");
                     0xFF
                 } else {
-                    self.obj_palette[(address - 0xFF48) as usize].into()
+                    self.obj_palette[(address - 0xFF48) as usize].bytes[0]
                 }
             }
             0xFF4A => self.window_y,
@@ -134,13 +134,14 @@ impl Ppu {
                 if context.device_mode() == DeviceMode::GameBoyColor {
                     warn!("Attempted to write to FF47 in CGB mode");
                 }
-                self.bg_palette = Palette::from(value);
+                self.bg_palette = MonochromePalette::from_bytes([value]);
             }
             0xFF48 | 0xFF49 => {
                 if context.device_mode() == DeviceMode::GameBoyColor {
                     warn!("Attempted to write to FF48 or FF49 in CGB mode");
                 }
-                self.obj_palette[(address - 0xFF48) as usize] = Palette::from(value);
+                self.obj_palette[(address - 0xFF48) as usize] =
+                    MonochromePalette::from_bytes([value]);
             }
             0xFF4A => self.window_y = value,
             0xFF4B => self.window_x = value,
@@ -238,42 +239,19 @@ impl Ppu {
         for x in 0..160 {
             let pixel_index = (self.ly as usize) * 160 + x as usize;
             if self.line_info[x as usize].is_none() {
-                self.frame_buffer[pixel_index] = 0xFF;
+                self.frame_buffer[pixel_index] = (0xFF, 0xFF, 0xFF);
                 continue;
             }
 
             let pixel_info = self.line_info[x as usize].unwrap();
 
             let color = match pixel_info.layer {
-                Layer::Bg_Win => match pixel_info.color_id {
-                    0 => self.bg_palette.ID0(),
-                    1 => self.bg_palette.ID1(),
-                    2 => self.bg_palette.ID2(),
-                    3 => self.bg_palette.ID3(),
-                    _ => unreachable!("Invalid pixel data id: {}", pixel_info.color_id),
-                },
-                Layer::Obj_0 => match pixel_info.color_id {
-                    0 => self.obj_palette[0].ID0(),
-                    1 => self.obj_palette[0].ID1(),
-                    2 => self.obj_palette[0].ID2(),
-                    3 => self.obj_palette[0].ID3(),
-                    _ => unreachable!("Invalid pixel data id: {}", pixel_info.color_id),
-                },
-                Layer::Obj_1 => match pixel_info.color_id {
-                    0 => self.obj_palette[1].ID0(),
-                    1 => self.obj_palette[1].ID1(),
-                    2 => self.obj_palette[1].ID2(),
-                    3 => self.obj_palette[1].ID3(),
-                    _ => unreachable!("Invalid pixel data id: {}", pixel_info.color_id),
-                },
+                Layer::Bg_Win => self.bg_palette.get_color(pixel_info.color_id),
+                Layer::Obj_0 => self.obj_palette[0].get_color(pixel_info.color_id),
+                Layer::Obj_1 => self.obj_palette[1].get_color(pixel_info.color_id),
             };
 
-            self.frame_buffer[pixel_index] = match color {
-                Color::White => 0xFF,
-                Color::LightGray => 0xAA,
-                Color::DarkGray => 0x55,
-                Color::Black => 0x00,
-            };
+            self.frame_buffer[pixel_index] = color;
         }
     }
 
@@ -447,7 +425,7 @@ impl Ppu {
         self.prev_interrupt = cur_interrupt;
     }
 
-    pub fn frame_buffer(&self) -> &[u8] {
+    pub fn frame_buffer(&self) -> &[(u8, u8, u8)] {
         &self.frame_buffer
     }
 
@@ -503,23 +481,34 @@ pub enum PpuMode {
 }
 
 #[bitfield(bits = 8)]
-#[repr(u8)]
 #[derive(Debug, Clone, Copy, Default)]
-struct Palette {
-    ID0: Color,
-    ID1: Color,
-    ID2: Color,
-    ID3: Color,
+struct MonochromePalette {
+    ID0: B2,
+    ID1: B2,
+    ID2: B2,
+    ID3: B2,
 }
 
-#[derive(BitfieldSpecifier, Debug, Clone, Copy, Default)]
-#[bits = 2]
-enum Color {
-    #[default]
-    White = 0,
-    LightGray = 1,
-    DarkGray = 2,
-    Black = 3,
+impl MonochromePalette {
+    fn get_color(&self, index: u8) -> (u8, u8, u8) {
+        match index {
+            0 => Self::to_rgb256(self.ID0()),
+            1 => Self::to_rgb256(self.ID1()),
+            2 => Self::to_rgb256(self.ID2()),
+            3 => Self::to_rgb256(self.ID3()),
+            _ => unreachable!("Invalid color palette index: {}", index),
+        }
+    }
+
+    fn to_rgb256(value: u8) -> (u8, u8, u8) {
+        match value {
+            0 => (0xFF, 0xFF, 0xFF),
+            1 => (0xAA, 0xAA, 0xAA),
+            2 => (0x55, 0x55, 0x55),
+            3 => (0x00, 0x00, 0x00),
+            _ => unreachable!("Invalid color palette index: {}", value),
+        }
+    }
 }
 
 #[bitfield(bits = 32)]

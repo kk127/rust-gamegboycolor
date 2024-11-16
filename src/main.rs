@@ -195,13 +195,14 @@ fn main() -> Result<()> {
                 let index = y * 160 + x;
                 let color = gameboy_color.frame_buffer()[index];
                 // Convert the monochrome color to an RGB color
-                let color = match color {
-                    0xFF => Color::RGB(255, 255, 255),
-                    0xAA => Color::RGB(170, 170, 170),
-                    0x55 => Color::RGB(85, 85, 85),
-                    0x00 => Color::RGB(0, 0, 0),
-                    _ => unreachable!(),
-                };
+                // let color = match color {
+                //     0xFF => Color::RGB(255, 255, 255),
+                //     0xAA => Color::RGB(170, 170, 170),
+                //     0x55 => Color::RGB(85, 85, 85),
+                //     0x00 => Color::RGB(0, 0, 0),
+                //     _ => unreachable!(),
+                // };
+                let color = Color::RGB(color.0, color.1, color.2);
                 canvas.set_draw_color(color);
                 canvas
                     .draw_point((x as i32, y as i32))

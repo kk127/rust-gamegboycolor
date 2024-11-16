@@ -78,7 +78,7 @@ impl Context {
         self.inner1.inner2.set_key(key_state);
     }
 
-    pub fn frame_buffer(&self) -> &[u8] {
+    pub fn frame_buffer(&self) -> &[(u8, u8, u8)] {
         self.inner1.frame_buffer()
     }
 
@@ -118,7 +118,7 @@ pub trait Ppu {
     fn ppu_write(&mut self, address: u16, value: u8);
 
     fn ppu_tick(&mut self);
-    fn frame_buffer(&self) -> &[u8];
+    fn frame_buffer(&self) -> &[(u8, u8, u8)];
     fn frame(&self) -> u64;
     fn ppu_mode(&self) -> ppu::PpuMode;
 }
@@ -223,7 +223,7 @@ impl Ppu for Inner1 {
         self.inner2.ppu_tick();
     }
 
-    fn frame_buffer(&self) -> &[u8] {
+    fn frame_buffer(&self) -> &[(u8, u8, u8)] {
         self.inner2.frame_buffer()
     }
 
@@ -351,7 +351,7 @@ impl Ppu for Inner2 {
         self.ppu.tick(&mut self.inner3);
     }
 
-    fn frame_buffer(&self) -> &[u8] {
+    fn frame_buffer(&self) -> &[(u8, u8, u8)] {
         self.ppu.frame_buffer()
     }
 
