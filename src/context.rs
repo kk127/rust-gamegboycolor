@@ -43,7 +43,7 @@ impl Context {
 
         let cartridge = cartridge::Cartridge::new(rom, backup);
         Ok(Self {
-            cpu: cpu::Cpu::new(),
+            cpu: cpu::Cpu::new(device_mode),
             inner1: Inner1 {
                 bus: bus::Bus::new(device_mode),
                 inner2: Inner2 {
@@ -120,6 +120,7 @@ pub trait Ppu {
     fn ppu_tick(&mut self);
     fn frame_buffer(&self) -> &[u8];
     fn frame(&self) -> u64;
+    fn ppu_mode(&self) -> ppu::PpuMode;
 }
 
 pub trait Apu {
@@ -228,6 +229,10 @@ impl Ppu for Inner1 {
 
     fn frame(&self) -> u64 {
         self.inner2.frame()
+    }
+
+    fn ppu_mode(&self) -> ppu::PpuMode {
+        self.inner2.ppu_mode()
     }
 }
 
@@ -352,6 +357,10 @@ impl Ppu for Inner2 {
 
     fn frame(&self) -> u64 {
         self.ppu.frame()
+    }
+
+    fn ppu_mode(&self) -> ppu::PpuMode {
+        self.ppu.ppu_mode()
     }
 }
 

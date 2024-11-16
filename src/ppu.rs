@@ -33,6 +33,9 @@ pub struct Ppu {
     window_x: u8,              // FF4B
     window_line_counter: u8,
 
+    bg_color_palette: ColorPalette,
+    obj_color_palette: ColorPalette,
+
     scan_line_obj_x: Vec<u8>,
 
     frame: u64,
@@ -95,9 +98,14 @@ impl Ppu {
                 if context.device_mode() == DeviceMode::GameBoyColor {
                     0b1111_1110 | self.vram_bank
                 } else {
+                    warn!("Attempted to read from FF4F in DMG mode");
                     0xFF
                 }
             }
+            // BG Color Palette
+            0xFF68 | 0xFF69 => self.bg_color_palette.read(address - 0xFF68),
+            // OBJ Color Palette
+            0xFF6A | 0xFF6B => self.obj_color_palette.read(address - 0xFF6A),
             _ => unreachable!("Unreachable PPU read address: {:#06X}", address),
         }
     }
@@ -143,6 +151,10 @@ impl Ppu {
                     warn!("Attempted to write to FF4F in DMG mode");
                 }
             }
+            // BG Color Palette
+            0xFF68 | 0xFF69 => self.bg_color_palette.write(address - 0xFF68, value),
+            // OBJ Color Palette
+            0xFF6A | 0xFF6B => self.obj_color_palette.write(address - 0xFF6A, value),
             // _ => unreachable!("Unreachable PPU write address: {:#06X}", address),
             _ => warn!("Invalid PPU write address: {:#06X}", address),
         }
@@ -172,35 +184,11 @@ impl Ppu {
         }
 
         self.update_mode(context);
-        // self.lx += 1;
-        // if (0..144).contains(&self.ly) {
-        //     if self.lx == 80 {
-        //         self.mode = PpuMode::DataTransfer;
-        //         self.render_scanline();
-        //     } else if self.lx == 252 {
-        //         self.mode = PpuMode::HBlank;
-        //     } else if self.lx == 456 {
-        //         self.lx = 0;
-        //         self.ly += 1;
-        //         if self.ly == 144 {
-        //             self.mode = PpuMode::VBlank;
-        //             context.set_interrupt_vblank(true);
-        //         } else {
-        //             self.mode = PpuMode::OamSearch;
-        //         }
-        //     }
-        // } else {
-        //     if self.lx == 456 {
-        //         self.lx = 0;
-        //         self.ly += 1;
-        //         if self.ly == 154 {
-        //             self.ly = 0;
-        //             self.mode = PpuMode::OamSearch;
-        //             self.frame += 1;
-        //         }
-        //     }
-        // }
         self.update_interrupt(context);
+    }
+
+    pub fn ppu_mode(&self) -> PpuMode {
+        self.mode
     }
 
     fn update_lx_ly(&mut self) {
@@ -506,7 +494,7 @@ struct Stat {
 
 #[derive(BitfieldSpecifier, Debug, Clone, Copy, Default, Eq, PartialEq)]
 #[bits = 2]
-enum PpuMode {
+pub enum PpuMode {
     HBlank = 0,
     VBlank = 1,
     #[default]
@@ -559,4 +547,47 @@ enum Layer {
     Bg_Win,
     Obj_0,
     Obj_1,
+}
+
+#[derive(Debug)]
+struct ColorPalette {
+    color_palette: Vec<u8>,
+    color_palette_index: u8,
+    enable_palette_index_auto_increment: bool,
+}
+
+impl Default for ColorPalette {
+    fn default() -> Self {
+        Self {
+            color_palette: vec![0; 64],
+            color_palette_index: 0,
+            enable_palette_index_auto_increment: false,
+        }
+    }
+}
+
+impl ColorPalette {
+    fn read(&self, offset: u16) -> u8 {
+        match offset {
+            0 => (self.enable_palette_index_auto_increment as u8) << 7 | self.color_palette_index,
+            1 => self.color_palette[self.color_palette_index as usize],
+            _ => unreachable!("Invalid color palette offset: {:#06X}", offset),
+        }
+    }
+
+    fn write(&mut self, offset: u16, value: u8) {
+        match offset {
+            0 => {
+                self.color_palette_index = value & 0x3F;
+                self.enable_palette_index_auto_increment = value & 0x80 == 0x80;
+            }
+            1 => {
+                self.color_palette[self.color_palette_index as usize] = value;
+                if self.enable_palette_index_auto_increment {
+                    self.color_palette_index = (self.color_palette_index + 1) % 64;
+                }
+            }
+            _ => unreachable!("Invalid color palette offset: {:#06X}", offset),
+        }
+    }
 }

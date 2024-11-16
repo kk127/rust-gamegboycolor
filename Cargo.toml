@@ -15,3 +15,4 @@ modular-bitfield = "0.11.2"
 sdl2 = "0.37.0"
 thiserror = "1.0.64"
 tokio = "1.41.0"
+clap = { version = "4.1", features = ["derive"] }

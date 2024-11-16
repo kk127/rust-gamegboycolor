@@ -1,3 +1,4 @@
+use crate::config::DeviceMode;
 use crate::context;
 use modular_bitfield::prelude::*;
 
@@ -6,7 +7,7 @@ use log::debug;
 trait Context: context::Bus + context::Interrupt {}
 impl<T: context::Bus + context::Interrupt> Context for T {}
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Cpu {
     registers: Registers,
     ime: bool,
@@ -19,9 +20,9 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new() -> Self {
+    pub fn new(device_mode: DeviceMode) -> Self {
         Self {
-            registers: Registers::default(),
+            registers: Registers::new(device_mode),
             ime: false,
             halt: false,
             clock: 0,
@@ -1114,27 +1115,67 @@ struct Registers {
     sp: u16,
 }
 
-impl Default for Registers {
-    fn default() -> Self {
-        // TODO This is initial state DMG after boot ROM execution.
-        // This should be configurable.
-        Self {
-            a: 0x01,
-            b: 0x00,
-            c: 0x13,
-            d: 0x00,
-            e: 0xD8,
-            h: 0x01,
-            l: 0x4D,
-            f: Flags::new()
-                .with_zero(true)
-                .with_half_carry(true)
-                .with_carry(true),
-            pc: 0x100,
-            sp: 0xFFFE,
+impl Registers {
+    fn new(device_mode: DeviceMode) -> Self {
+        match device_mode {
+            // DMG
+            DeviceMode::GameBoy => Self {
+                a: 0x01,
+                b: 0x00,
+                c: 0x13,
+                d: 0x00,
+                e: 0xD8,
+                h: 0x01,
+                l: 0x4D,
+                f: Flags::new()
+                    .with_zero(true)
+                    .with_half_carry(true)
+                    .with_carry(true),
+                pc: 0x100,
+                sp: 0xFFFE,
+            },
+
+            // CGB
+            DeviceMode::GameBoyColor => Self {
+                a: 0x11,
+                b: 0x00,
+                c: 0x00,
+                d: 0x00,
+                e: 0x08,
+                h: 0x01,
+                l: 0x4D,
+                f: Flags::new()
+                    .with_zero(true)
+                    .with_half_carry(true)
+                    .with_carry(true),
+                pc: 0x100,
+                sp: 0xFFFE,
+            },
         }
     }
 }
+
+// impl Default for Registers {
+// fn default() -> Self {
+// TODO This is initial state DMG after boot ROM execution.
+// This should be configurable.
+//     Self {
+//         a: 0x01,
+//         b: 0x00,
+//         c: 0x13,
+//         d: 0x00,
+//         e: 0xD8,
+//         h: 0x01,
+//         l: 0x4D,
+//         f: Flags::new()
+//             .with_zero(true)
+//             .with_half_carry(true)
+//             .with_carry(true),
+//         pc: 0x100,
+//         sp: 0xFFFE,
+//     }
+// }
+// }
 
 #[bitfield(bits = 8)]
 #[derive(Debug, Default)]

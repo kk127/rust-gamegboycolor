@@ -1,7 +1,7 @@
 use log::{debug, warn};
 
 use crate::config::Config;
-use crate::{context, DeviceMode};
+use crate::{context, ppu, DeviceMode};
 
 trait Context:
     context::Cartridge
@@ -33,6 +33,7 @@ pub struct Bus {
     hram: [u8; 0x7F],
 
     dma: Dma,
+    hdma: Hdma,
 
     // CGB undocumented registers
     ff72: u8,
@@ -53,6 +54,7 @@ impl Bus {
             hram: [0; 0x7F],
 
             dma: Dma::default(),
+            hdma: Hdma::default(),
 
             ff72: 0,
             ff73: 0,
@@ -98,8 +100,12 @@ impl Bus {
                 0xFF
             }
             0xFF51..=0xFF55 => {
-                warn!("HDMA is not implemented");
-                0xFF
+                if context.device_mode() == DeviceMode::GameBoy {
+                    warn!("Read from HDMA register in DMG mode");
+                    0xFF
+                } else {
+                    self.hdma.read(address)
+                }
             }
             0xFF68..=0xFF6B => context.ppu_read(address),
             0xFF70 => {
@@ -188,16 +194,28 @@ impl Bus {
             }
             0xFF4F => context.ppu_write(address, value),
             0xFF50 => warn!("Boot ROM not implemented"),
-            0xFF51..=0xFF55 => warn!("HDMA not implemented"),
-            0xFF56 => {
+            0xFF51..=0xFF55 => {
                 if context.device_mode() == DeviceMode::GameBoy {
-                    warn!("Write to FF56 in DMG mode");
+                    warn!("Write to HDMA register in DMG mode");
                 } else {
-                    todo!("Write to FF56 in CGB mode");
+                    self.hdma.write(address, value);
                 }
             }
+            // 0xFF56 => {
+            //     if context.device_mode() == DeviceMode::GameBoy {
+            //         warn!("Write to FF56 in DMG mode");
+            //     } else {
+            //         todo!("Write to FF56 in CGB mode");
+            //     }
+            // }
             0xFF68..=0xFF6C => context.ppu_write(address, value),
-            0xFF70 => self.wram_bank = (value & 0x07).max(1),
+            0xFF70 => {
+                if context.device_mode() == DeviceMode::GameBoyColor {
+                    self.wram_bank = (value & 0x07).max(1);
+                } else {
+                    warn!("Write to FF70 in DMG mode");
+                }
+            }
             0xFF72 => {
                 if context.device_mode() == DeviceMode::GameBoy {
                     warn!("Write CGB Undocumented Register: FF72");
@@ -240,6 +258,7 @@ impl Bus {
 
     pub fn tick(&mut self, context: &mut impl Context) {
         self.process_dma(context);
+        self.process_hdma(context);
     }
 
     fn process_dma(&mut self, context: &mut impl Context) {
@@ -261,6 +280,35 @@ impl Bus {
             self.dma.enable = false;
         }
     }
+
+    fn process_hdma(&mut self, context: &mut impl Context) {
+        assert!(!(self.hdma.enable_gdma && self.hdma.enable_hdma));
+
+        let is_hblank = context.ppu_mode() == ppu::PpuMode::HBlank;
+        let enter_hblank = is_hblank && !self.hdma.is_prev_hblank;
+        self.hdma.is_prev_hblank = is_hblank;
+
+        if self.hdma.enable_gdma || (self.hdma.enable_hdma && enter_hblank) {
+            println!("HDMA: {:#?}", self.hdma);
+            for i in 0..16 {
+                let source_address = self.hdma.source_address + i;
+                let destination_address = 0x8000 | (self.hdma.destination_address + i);
+                let value = self.read(context, source_address);
+                self.write(context, destination_address, value);
+            }
+
+            self.hdma.source_address = self.hdma.source_address.wrapping_add(16);
+            self.hdma.destination_address = self.hdma.destination_address.wrapping_add(16);
+
+            let (length, ovf) = self.hdma.length.overflowing_sub(1);
+            self.hdma.length = length;
+            if ovf || self.hdma.destination_address >= 0x2000 {
+                self.hdma.enable_gdma = false;
+                self.hdma.enable_hdma = false;
+                self.hdma.destination_address &= 0x1FFF;
+            }
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -279,5 +327,55 @@ impl Dma {
 
     fn read(&self) -> u8 {
         self.upper_source_address
+    }
+}
+
+#[derive(Debug, Default)]
+struct Hdma {
+    source_address: u16,
+    destination_address: u16,
+    length: u8,
+    enable_gdma: bool,
+    enable_hdma: bool,
+    is_prev_hblank: bool,
+}
+
+impl Hdma {
+    fn read(&self, address: u16) -> u8 {
+        match address {
+            0xFF51..=0xFF54 => {
+                warn!("Load Invalid HDMA register: {:#06X}", address);
+                0xFF
+            }
+            0xFF55 => (!self.enable_hdma as u8) << 7 | self.length,
+            _ => unreachable!("Invalid HDMA register: {:#06X}", address),
+        }
+    }
+
+    fn write(&mut self, address: u16, value: u8) {
+        match address {
+            0xFF51 => self.source_address = (value as u16) << 8 | (self.source_address & 0x00FF),
+            0xFF52 => self.source_address = (self.source_address & 0xFF00) | (value & 0xF0) as u16,
+            0xFF53 => {
+                self.destination_address =
+                    ((value & 0x1F) as u16) << 8 | (self.destination_address & 0x00FF)
+            }
+            0xFF54 => {
+                self.destination_address =
+                    (self.destination_address & 0xFF00) | (value & 0xF0) as u16
+            }
+            0xFF55 => {
+                if self.enable_hdma {
+                    self.enable_hdma = false;
+                } else if (value >> 7) & 0x01 == 1 {
+                    self.enable_hdma = true;
+                    self.length = value & 0x7F;
+                } else {
+                    self.enable_gdma = true;
+                    self.length = value & 0x7F;
+                }
+            }
+            _ => unreachable!("Invalid HDMA register: {:#06X}", address),
+        }
     }
 }
