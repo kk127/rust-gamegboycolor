@@ -1,4 +1,6 @@
 use anyhow::{Context, Result};
+use clap::Parser;
+use log::{debug, info};
 use rust_gameboycolor::utils;
 use rust_gameboycolor::{
     gameboycolor, DeviceMode, JoypadKey, JoypadKeyState, LinkCable, NetworkCable,
@@ -28,24 +30,54 @@ impl LinkCable for Cable {
     }
 }
 
+#[derive(Parser, Debug)]
+#[command(author, version, about)]
+struct Args {
+    #[clap(short, long)]
+    listen_port: String,
+    #[clap(short, long)]
+    send_port: String,
+    // #[clap(short, long)]
+    file_path: String,
+    #[clap(short, long)]
+    gb: bool,
+}
+
 fn main() -> Result<()> {
     env_logger::init();
 
-    let file_path = env::args().nth(1).expect("No file path provided");
+    let args = Args::parse();
+    let file_path = args.file_path;
+    let listen_port = args.listen_port;
+    let send_port = args.send_port;
+
+    let device_mode = if args.gb {
+        DeviceMode::GameBoy
+    } else {
+        DeviceMode::GameBoyColor
+    };
+
+    // let file_path = env::args().nth(1).expect("No file path provided");
     let file = std::fs::read(&file_path).unwrap();
 
     // 第2引数: listen port
     // 第3引数: send port
-    let listen_port = env::args().nth(2).expect("No listen port provided");
-    let send_port = env::args().nth(3).expect("No send port provided");
+    // let listen_port = env::args().nth(2).expect("No listen port provided");
+    // let send_port = env::args().nth(3).expect("No send port provided");
 
     // let cable = Cable { buffer: Vec::new() };
     let network_cable = NetworkCable::new(listen_port, send_port);
 
     // let mut gameboy_color =
     //     gameboycolor::GameBoyColor::new(&file, DeviceMode::GameBoy, Some(Box::new(cable)))?;
-    let mut gameboy_color =
-        gameboycolor::GameBoyColor::new(&file, DeviceMode::GameBoy, Some(Box::new(network_cable)))?;
+    info!("DeviceMode: {:?}", device_mode);
+    let mut gameboy_color = gameboycolor::GameBoyColor::new(
+        &file,
+        device_mode,
+        // DeviceMode::GameBoyColor,
+        // DeviceMode::GameBoy,
+        Some(Box::new(network_cable)),
+    )?;
 
     let sdl2_context = sdl2::init()
         .map_err(|e| anyhow::anyhow!(e))
