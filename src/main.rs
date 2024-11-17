@@ -57,27 +57,14 @@ fn main() -> Result<()> {
         DeviceMode::GameBoyColor
     };
 
-    // let file_path = env::args().nth(1).expect("No file path provided");
     let file = std::fs::read(&file_path).unwrap();
-
-    // 第2引数: listen port
-    // 第3引数: send port
-    // let listen_port = env::args().nth(2).expect("No listen port provided");
-    // let send_port = env::args().nth(3).expect("No send port provided");
 
     // let cable = Cable { buffer: Vec::new() };
     let network_cable = NetworkCable::new(listen_port, send_port);
 
-    // let mut gameboy_color =
-    //     gameboycolor::GameBoyColor::new(&file, DeviceMode::GameBoy, Some(Box::new(cable)))?;
     info!("DeviceMode: {:?}", device_mode);
-    let mut gameboy_color = gameboycolor::GameBoyColor::new(
-        &file,
-        device_mode,
-        // DeviceMode::GameBoyColor,
-        // DeviceMode::GameBoy,
-        Some(Box::new(network_cable)),
-    )?;
+    let mut gameboy_color =
+        gameboycolor::GameBoyColor::new(&file, device_mode, Some(Box::new(network_cable)))?;
 
     let sdl2_context = sdl2::init()
         .map_err(|e| anyhow::anyhow!(e))
@@ -194,14 +181,6 @@ fn main() -> Result<()> {
             for y in 0..144 {
                 let index = y * 160 + x;
                 let color = gameboy_color.frame_buffer()[index];
-                // Convert the monochrome color to an RGB color
-                // let color = match color {
-                //     0xFF => Color::RGB(255, 255, 255),
-                //     0xAA => Color::RGB(170, 170, 170),
-                //     0x55 => Color::RGB(85, 85, 85),
-                //     0x00 => Color::RGB(0, 0, 0),
-                //     _ => unreachable!(),
-                // };
                 let color = Color::RGB(color.0, color.1, color.2);
                 canvas.set_draw_color(color);
                 canvas

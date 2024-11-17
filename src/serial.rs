@@ -41,6 +41,7 @@ impl Serial {
     }
 
     pub fn write(&mut self, address: u16, value: u8, context: &impl Context) {
+        println!("Serial write: {:#06X}, {:#04X}", address, value);
         match address {
             0xFF01 => {
                 println!("FF01 write: {:#04X}", value);

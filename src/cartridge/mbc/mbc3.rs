@@ -7,7 +7,6 @@ pub struct Mbc3 {
     rom_bank: u8,
     rom_bank_mask: u8,
     ram: Vec<u8>,
-    ram_bank: u8,
     ram_bank_mask: u8,
     ram_rtc_enable: bool,
     rtc_register_select: RegisterSelect,

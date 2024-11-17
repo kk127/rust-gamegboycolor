@@ -1118,64 +1118,34 @@ struct Registers {
 impl Registers {
     fn new(device_mode: DeviceMode) -> Self {
         match device_mode {
-            // DMG
             DeviceMode::GameBoy => Self {
-                a: 0x01,
-                b: 0x00,
-                c: 0x13,
+                a: 0x11,
+                b: 0x01,
+                c: 0x00,
                 d: 0x00,
-                e: 0xD8,
-                h: 0x01,
-                l: 0x4D,
-                f: Flags::new()
-                    .with_zero(true)
-                    .with_half_carry(true)
-                    .with_carry(true),
+                e: 0x08,
+                h: 0x00,
+                l: 0x7C,
+                f: Flags::new().with_zero(true),
                 pc: 0x100,
                 sp: 0xFFFE,
             },
 
-            // CGB
             DeviceMode::GameBoyColor => Self {
                 a: 0x11,
                 b: 0x00,
                 c: 0x00,
-                d: 0x00,
-                e: 0x08,
-                h: 0x01,
-                l: 0x4D,
-                f: Flags::new()
-                    .with_zero(true)
-                    .with_half_carry(true)
-                    .with_carry(true),
+                d: 0xFF,
+                e: 0x56,
+                h: 0x00,
+                l: 0x0D,
+                f: Flags::new().with_zero(true),
                 pc: 0x100,
                 sp: 0xFFFE,
             },
         }
     }
 }
-
-// impl Default for Registers {
-// fn default() -> Self {
-// TODO This is initial state DMG after boot ROM execution.
-// This should be configurable.
-//     Self {
-//         a: 0x01,
-//         b: 0x00,
-//         c: 0x13,
-//         d: 0x00,
-//         e: 0xD8,
-//         h: 0x01,
-//         l: 0x4D,
-//         f: Flags::new()
-//             .with_zero(true)
-//             .with_half_carry(true)
-//             .with_carry(true),
-//         pc: 0x100,
-//         sp: 0xFFFE,
-//     }
-// }
-// }
 
 #[bitfield(bits = 8)]
 #[derive(Debug, Default)]

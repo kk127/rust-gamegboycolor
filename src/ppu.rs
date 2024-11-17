@@ -64,7 +64,11 @@ impl Ppu {
 
     pub fn read(&mut self, context: &mut impl Context, address: u16) -> u8 {
         match address {
-            0x8000..=0x9FFF => self.vram[(address - 0x8000) as usize],
+            0x8000..=0x9FFF => {
+                let offset = (address - 0x8000) as usize;
+                let vram_addr = self.vram_bank as usize * 0x2000 + offset;
+                self.vram[vram_addr]
+            }
             0xFE00..=0xFE9F => self.oam[(address - 0xFE00) as usize],
             0xFF40 => self.lcdc.into(),
             0xFF41 => {
@@ -79,18 +83,14 @@ impl Ppu {
             0xFF47 => {
                 if context.device_mode() == DeviceMode::GameBoyColor {
                     warn!("Attempted to read from FF47 in CGB mode");
-                    0xFF
-                } else {
-                    self.bg_palette.bytes[0]
                 }
+                self.bg_palette.bytes[0]
             }
             0xFF48 | 0xFF49 => {
                 if context.device_mode() == DeviceMode::GameBoyColor {
                     warn!("Attempted to read from FF48 or FF49 in CGB mode");
-                    0xFF
-                } else {
-                    self.obj_palette[(address - 0xFF48) as usize].bytes[0]
                 }
+                self.obj_palette[(address - 0xFF48) as usize].bytes[0]
             }
             0xFF4A => self.window_y,
             0xFF4B => self.window_x,
@@ -103,9 +103,24 @@ impl Ppu {
                 }
             }
             // BG Color Palette
-            0xFF68 | 0xFF69 => self.bg_color_palette.read(address - 0xFF68),
+            0xFF68 | 0xFF69 => {
+                if context.device_mode() == DeviceMode::GameBoyColor {
+                    self.bg_color_palette.read(address - 0xFF68)
+                } else {
+                    warn!("Attempted to read from FF68 or FF69 in DMG mode");
+                    0xFF
+                }
+            }
+
             // OBJ Color Palette
-            0xFF6A | 0xFF6B => self.obj_color_palette.read(address - 0xFF6A),
+            0xFF6A | 0xFF6B => {
+                if context.device_mode() == DeviceMode::GameBoyColor {
+                    self.obj_color_palette.read(address - 0xFF6A)
+                } else {
+                    warn!("Attempted to read from FF6A or FF6B in DMG mode");
+                    0xFF
+                }
+            }
             _ => unreachable!("Unreachable PPU read address: {:#06X}", address),
         }
     }
@@ -113,7 +128,11 @@ impl Ppu {
     pub fn write(&mut self, context: &mut impl Context, address: u16, value: u8) {
         debug!("PPU write: {:#06X} = {:#04X}", address, value);
         match address {
-            0x8000..=0x9FFF => self.vram[(address - 0x8000) as usize] = value,
+            0x8000..=0x9FFF => {
+                let offset = (address - 0x8000) as usize;
+                let vram_addr = self.vram_bank as usize * 0x2000 + offset;
+                self.vram[vram_addr] = value;
+            }
             0xFE00..=0xFE9F => self.oam[(address - 0xFE00) as usize] = value,
             0xFF40 => {
                 let new_lcdc = Lcdc::from(value);
@@ -153,10 +172,15 @@ impl Ppu {
                 }
             }
             // BG Color Palette
-            0xFF68 | 0xFF69 => self.bg_color_palette.write(address - 0xFF68, value),
+            0xFF68 | 0xFF69 => {
+                println!("Write {:#06X}: {:#04X}", address, value);
+                self.bg_color_palette.write(address - 0xFF68, value);
+            }
             // OBJ Color Palette
-            0xFF6A | 0xFF6B => self.obj_color_palette.write(address - 0xFF6A, value),
-            // _ => unreachable!("Unreachable PPU write address: {:#06X}", address),
+            0xFF6A | 0xFF6B => {
+                println!("Write {:#06X}: {:#04X}", address, value);
+                self.obj_color_palette.write(address - 0xFF6A, value);
+            }
             _ => warn!("Invalid PPU write address: {:#06X}", address),
         }
     }
@@ -200,6 +224,14 @@ impl Ppu {
             if self.ly == 154 {
                 self.ly = 0;
                 self.frame += 1;
+                println!(
+                    "BG Color Palette: {:?}",
+                    self.bg_color_palette.color_palette
+                );
+                println!(
+                    "OBJ Color Palette: {:?}",
+                    self.obj_color_palette.color_palette
+                );
             }
         }
     }
@@ -223,17 +255,17 @@ impl Ppu {
             if mode == PpuMode::VBlank {
                 context.set_interrupt_vblank(true);
             } else if mode == PpuMode::DataTransfer {
-                self.render_scanline();
+                self.render_scanline(context);
             }
         }
 
         self.mode = mode;
     }
 
-    fn render_scanline(&mut self) {
-        self.render_background();
+    fn render_scanline(&mut self, context: &impl Context) {
+        self.render_background(context);
         if self.lcdc.obj_enable() {
-            self.render_obj();
+            self.render_obj(context);
         }
 
         for x in 0..160 {
@@ -246,30 +278,34 @@ impl Ppu {
             let pixel_info = self.line_info[x as usize].unwrap();
 
             let color = match pixel_info.layer {
-                Layer::Bg_Win => self.bg_palette.get_color(pixel_info.color_id),
-                Layer::Obj_0 => self.obj_palette[0].get_color(pixel_info.color_id),
-                Layer::Obj_1 => self.obj_palette[1].get_color(pixel_info.color_id),
+                Layer::Monochrome_Bg_Win => self.bg_palette.get_color(pixel_info.color_id),
+                Layer::Monochrome_Obj_0 => self.obj_palette[0].get_color(pixel_info.color_id),
+                Layer::Monochrome_Obj_1 => self.obj_palette[1].get_color(pixel_info.color_id),
+                Layer::Color_Bg_Win => self
+                    .bg_color_palette
+                    .get_color(pixel_info.palette_number.unwrap(), pixel_info.color_id),
+                Layer::Color_Obj => self
+                    .obj_color_palette
+                    .get_color(pixel_info.palette_number.unwrap(), pixel_info.color_id),
             };
 
             self.frame_buffer[pixel_index] = color;
         }
     }
 
-    fn render_background(&mut self) {
+    fn render_background(&mut self, context: &impl Context) {
         let is_in_window_y = self.window_y <= self.ly;
         if self.ly == self.window_y {
             self.window_line_counter = 0;
         }
         let mut increment_window_line_counter = false;
         for x in 0..160 {
-            if !self.lcdc.bg_and_window_enable() {
-                continue;
-            }
+            // if !self.lcdc.bg_and_window_enable() {
+            //     continue;
+            // }
 
             let is_in_window_x = self.window_x <= x + 7;
             let render_window = self.lcdc.window_enable() && is_in_window_y && is_in_window_x;
-
-            // println!("x: {}, y: {}, render_window: {}", x, self.ly, render_window);
 
             let (tile_map_x, tile_map_y, tile_map_base_address) = if render_window {
                 let window_x = x + 7 - self.window_x;
@@ -294,33 +330,62 @@ impl Ppu {
 
             let tile_x = tile_map_x / 8;
             let tile_y = tile_map_y / 8;
-            let pixel_x = tile_map_x % 8;
-            let pixel_y = tile_map_y % 8;
+            let mut pixel_x = tile_map_x % 8;
+            let mut pixel_y = tile_map_y % 8;
 
             let tile_number = tile_x + tile_y * 32;
             let tile_map_address = tile_map_base_address + tile_number;
+
+            let cgb_map_attributes = if context.device_mode() == DeviceMode::GameBoyColor {
+                CgbMapAttributes::from_bytes([self.vram[0x2000 + tile_map_address]])
+            } else {
+                CgbMapAttributes::from_bytes([0])
+            };
+
             let tile_index = self.vram[tile_map_address] as usize;
-            let tile_address = match self.lcdc.bg_window_tile_data_select() {
+            let mut tile_address = match self.lcdc.bg_window_tile_data_select() {
                 true => tile_index * 16,
                 false => (0x1000_i16).wrapping_add((tile_index as i8 as i16) * 16) as usize,
             };
+
+            if cgb_map_attributes.is_bank() {
+                tile_address += 0x2000;
+            }
+            if cgb_map_attributes.is_x_flip() {
+                pixel_x = 7 - pixel_x;
+            }
+            if cgb_map_attributes.is_y_flip() {
+                pixel_y = 7 - pixel_y;
+            }
 
             let pixel_address = tile_address + pixel_y * 2;
             let pixel_data_low = (self.vram[pixel_address] >> (7 - pixel_x)) & 1;
             let pixel_data_high = (self.vram[pixel_address + 1] >> (7 - pixel_x)) & 1;
             let pixel_data_id = (pixel_data_high << 1) | pixel_data_low;
 
-            self.line_info[x as usize] = Some(PixelInfo {
-                layer: Layer::Bg_Win,
-                color_id: pixel_data_id,
-            });
+            match context.device_mode() {
+                DeviceMode::GameBoy => {
+                    self.line_info[x as usize] = Some(PixelInfo {
+                        layer: Layer::Monochrome_Bg_Win,
+                        palette_number: None,
+                        color_id: pixel_data_id,
+                    });
+                }
+                DeviceMode::GameBoyColor => {
+                    self.line_info[x as usize] = Some(PixelInfo {
+                        layer: Layer::Color_Bg_Win,
+                        palette_number: Some(cgb_map_attributes.palette_number()),
+                        color_id: pixel_data_id,
+                    });
+                }
+            }
         }
         if increment_window_line_counter {
             self.window_line_counter += 1;
         }
     }
 
-    fn render_obj(&mut self) {
+    fn render_obj(&mut self, context: &impl Context) {
         let mut scanline_obj_count = 0;
         for i in 0..40 {
             let obj_attr_address = i * 4;
@@ -376,13 +441,16 @@ impl Ppu {
                     offset_y
                 };
 
-                let tile_address = if self.lcdc.obj_size() == ObjSize::EightBySixteen {
+                let mut tile_address = if self.lcdc.obj_size() == ObjSize::EightBySixteen {
                     (obj_attr.tile_number() & 0xFE) as usize * 16
                 } else {
                     obj_attr.tile_number() as usize * 16
                 };
 
-                // println!("Tile address: {:#06X}", tile_address);
+                if context.device_mode() == DeviceMode::GameBoyColor {
+                    tile_address += obj_attr.cgb_bank() as usize * 0x2000;
+                }
+
                 let pixel_address = tile_address + pixel_y as usize * 2;
                 let pixel_data_low = (self.vram[pixel_address] >> (7 - pixel_x)) & 1;
                 let pixel_data_high = (self.vram[pixel_address + 1] >> (7 - pixel_x)) & 1;
@@ -392,19 +460,30 @@ impl Ppu {
                     continue;
                 }
 
-                let layer = match obj_attr.dmg_palette_number() {
-                    0 => Layer::Obj_0,
-                    1 => Layer::Obj_1,
-                    _ => unreachable!(
-                        "Invalid DMG palette number: {}",
-                        obj_attr.dmg_palette_number()
-                    ),
-                };
-
-                self.line_info[screen_x as usize] = Some(PixelInfo {
-                    layer,
-                    color_id: pixel_data_id,
-                });
+                match context.device_mode() {
+                    DeviceMode::GameBoy => {
+                        let layer = match obj_attr.dmg_palette_number() {
+                            0 => Layer::Monochrome_Obj_0,
+                            1 => Layer::Monochrome_Obj_1,
+                            _ => unreachable!(
+                                "Invalid DMG palette number: {}",
+                                obj_attr.dmg_palette_number()
+                            ),
+                        };
+                        self.line_info[screen_x as usize] = Some(PixelInfo {
+                            layer,
+                            palette_number: None,
+                            color_id: pixel_data_id,
+                        });
+                    }
+                    DeviceMode::GameBoyColor => {
+                        self.line_info[screen_x as usize] = Some(PixelInfo {
+                            layer: Layer::Color_Obj,
+                            palette_number: Some(obj_attr.cgb_palette_number()),
+                            color_id: pixel_data_id,
+                        });
+                    }
+                }
             }
         }
     }
@@ -528,14 +607,17 @@ struct ObjAttr {
 #[derive(Debug, Clone, Copy)]
 struct PixelInfo {
     layer: Layer,
+    palette_number: Option<u8>,
     color_id: u8,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Layer {
-    Bg_Win,
-    Obj_0,
-    Obj_1,
+    Monochrome_Bg_Win,
+    Monochrome_Obj_0,
+    Monochrome_Obj_1,
+    Color_Bg_Win,
+    Color_Obj,
 }
 
 #[derive(Debug)]
@@ -579,4 +661,36 @@ impl ColorPalette {
             _ => unreachable!("Invalid color palette offset: {:#06X}", offset),
         }
     }
+
+    fn get_color(&self, palette: u8, index: u8) -> (u8, u8, u8) {
+        let color_index = (palette * 8 + index * 2) as usize;
+        let color = u16::from_le_bytes(
+            self.color_palette[color_index..color_index + 2]
+                .try_into()
+                .unwrap(),
+        );
+        Self::to_rgb256(color)
+    }
+
+    fn to_rgb256(color: u16) -> (u8, u8, u8) {
+        let r = ((color >> 0) & 0x1F) as u8;
+        let g = ((color >> 5) & 0x1F) as u8;
+        let b = ((color >> 10) & 0x1F) as u8;
+        let r = r << 3 | r >> 2;
+        let g = g << 3 | g >> 2;
+        let b = b << 3 | b >> 2;
+        (r, g, b)
+    }
+}
+
+#[bitfield(bits = 8)]
+#[derive(Debug, Clone, Copy, Default)]
+struct CgbMapAttributes {
+    palette_number: B3,
+    is_bank: bool,
+    #[skip]
+    __: B1,
+    is_x_flip: bool,
+    is_y_flip: bool,
+    priority: bool,
 }
