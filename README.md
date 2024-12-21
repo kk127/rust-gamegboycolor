@@ -7,11 +7,8 @@ A Game Boy and Game Boy Color emulator implemented in Rust.
 This project is a Game Boy and Game Boy Color emulator written in Rust that emulates the hardware of the original consoles. It includes implementations of the CPU, memory bank controllers (MBC), audio processing unit (APU), and other core components necessary to run games accurately.
 
 ## Gameplay Examples
-<!-- <p align="center">
   <img src="assets/POKEMON_S.gif" alt="Pokémon Silver" width="45%" />
-  <img src="assets/POKEMONRED.gif" alt="Pokémon Red" width="45%" /> -->
-![Pokémon Silver](assets/POKEMON_S.gif)
-![Pokémon Red](assets/POKEMONRED.gif)
+  <img src="assets/POKEMONRED.gif" alt="Pokémon Red" width="45%" /> 
 
 ## Features
 
