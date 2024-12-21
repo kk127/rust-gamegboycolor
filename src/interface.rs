@@ -141,12 +141,12 @@ impl Client {
                 // Ok(_) => println!("データを送信しました: {}", data),
                 Ok(_) => {}
                 Err(e) => {
-                    println!("データの送信に失敗しました: {}", e);
+                    // println!("データの送信に失敗しました: {}", e);
                     self.stream = None;
                 }
             }
         } else {
-            println!("サーバーへの接続が確立されていません。")
+            // println!("サーバーへの接続が確立されていません。")
         }
     }
 
@@ -154,7 +154,7 @@ impl Client {
         if self.stream.is_none() {
             match TcpStream::connect(&self.server_addr) {
                 Ok(stream) => {
-                    println!("サーバに接続しました：{}", self.server_addr);
+                    // println!("サーバに接続しました：{}", self.server_addr);
                     stream
                         .set_write_timeout(Some(std::time::Duration::from_secs(5)))
                         .unwrap();
@@ -162,7 +162,7 @@ impl Client {
                     self.stream = Some(stream);
                 }
                 Err(e) => {
-                    println!("サーバーへの接続に失敗しました。 {:?}", e);
+                    // println!("サーバーへの接続に失敗しました。 {:?}", e);
                 }
             }
         }

@@ -41,15 +41,12 @@ impl Serial {
     }
 
     pub fn write(&mut self, address: u16, value: u8, context: &impl Context) {
-        println!("Serial write: {:#06X}, {:#04X}", address, value);
         match address {
             0xFF01 => {
-                println!("FF01 write: {:#04X}", value);
                 self.buf = value;
             }
             0xFF02 => {
                 let prev_is_transfer = self.sc.transfer_requested_or_progress();
-                println!("FF02 write: {:#04X}", value);
                 self.sc = Sc::from_bytes([value]);
                 if self.sc.transfer_requested_or_progress() && !prev_is_transfer {
                     self.send_buf = Some(self.buf);
@@ -58,12 +55,6 @@ impl Serial {
             }
             _ => unreachable!("Unreachable Serial write address: {:#06X}", address),
         }
-        println!("----Status----");
-        println!("SC: {:#04X}", self.sc.bytes[0]);
-        println!("buf: {:#04X}", self.buf);
-        println!("send_buf: {:?}", self.send_buf);
-        println!("recv_buf: {:?}", self.receive_buf);
-        println!("---------------");
     }
 
     pub fn tick(&mut self, context: &mut impl Context) {
@@ -79,19 +70,19 @@ impl Serial {
                     self.buf = recv_val.unwrap();
                     self.rev_count += 1;
                     let send_val = self.send_buf.take().unwrap();
-                    println!("External Serial receive: {:#04X}", recv_val.unwrap());
+                    // println!("External Serial receive: {:#04X}", recv_val.unwrap());
                     link_cable.send(send_val);
                     self.send_count += 1;
 
                     self.sc.set_transfer_requested_or_progress(false);
                     context.set_interrupt_serial(true);
-                    println!("******************panic_counter: {}", self.panic_counter);
+                    // println!("******************panic_counter: {}", self.panic_counter);
                     self.panic_counter += 1;
                 }
             }
             ClockSelect::Internal => {
                 if let Some(send_val) = self.send_buf.take() {
-                    println!("Internal Serial send: {:#04X}", send_val);
+                    // println!("Internal Serial send: {:#04X}", send_val);
                     link_cable.send(send_val);
                 }
 
@@ -100,7 +91,7 @@ impl Serial {
                     self.buf = recv_val;
                     self.sc.set_transfer_requested_or_progress(false);
                     context.set_interrupt_serial(true);
-                    println!("******************panic_counter: {}", self.panic_counter);
+                    // println!("******************panic_counter: {}", self.panic_counter);
                     self.panic_counter += 1;
                 }
             }

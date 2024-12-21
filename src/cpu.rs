@@ -221,6 +221,7 @@ impl Cpu {
         // if self.registers.f.half_carry() { "H" } else { "h" },
         // if self.registers.f.carry() { "C" } else { "c" });
         // println!("Count: {:4}, Cycle: {}, IME: {}, PC: {:#06X}, opcode: {:#04X}, sp: {:#06X}, a: {:#04X}, b: {:#04X}, c: {:#04X}, d: {:#04X}, e: {:#04X}, h: {:#04X}, l: {:#04X}, {}{}{}{}", self.counter, self.clock, self.ime, self.registers.pc, opcode, self.registers.sp, self.registers.a, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l,
+        // println!("Count: {:4}, IME: {}, PC: {:#06X}, opcode: {:#04X}, sp: {:#06X}, a: {:#04X}, b: {:#04X}, c: {:#04X}, d: {:#04X}, e: {:#04X}, h: {:#04X}, l: {:#04X}, {}{}{}{}", self.counter, self.ime, self.registers.pc, opcode, self.registers.sp, self.registers.a, self.registers.b, self.registers.c, self.registers.d, self.registers.e, self.registers.h, self.registers.l,
         // if self.registers.f.zero() { "Z" } else { "z" },
         // if self.registers.f.subtract() { "N" } else { "n" },
         // if self.registers.f.half_carry() { "H" } else { "h" },
@@ -461,7 +462,7 @@ impl Cpu {
     }
 
     fn stop(&mut self) {
-        self.halt = true;
+        // self.halt = true;
     }
 
     fn ld_r8_r8(&mut self, context: &mut impl Context, opcode: u8) {

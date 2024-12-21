@@ -56,7 +56,14 @@ impl Mbc for Mbc3 {
     fn write(&mut self, address: u16, value: u8) {
         match address {
             0x0000..=0x1FFF => self.ram_rtc_enable = value & 0x0F == 0x0A,
-            0x2000..=0x3FFF => self.rom_bank = (value & 0x7F).max(1),
+            0x2000..=0x3FFF => {
+                if self.is_mbc30() {
+                    // println!("MBC30: {:#04X}", value);
+                    self.rom_bank = value.max(1);
+                } else {
+                    self.rom_bank = (value & 0x7F).max(1);
+                }
+            }
             0x4000..=0x5FFF => match value {
                 0x00..=0x03 => self.rtc_register_select = RegisterSelect::RamBank(value),
                 0x08..=0x0C => self.rtc_register_select = RegisterSelect::Rtc(value),
@@ -116,7 +123,6 @@ impl Mbc3 {
             rom_bank: 1,
             rom_bank_mask,
             ram,
-            ram_bank: 0,
             ram_bank_mask,
             ram_rtc_enable: false,
             rtc_register_select: RegisterSelect::RamBank(0),
@@ -124,6 +130,10 @@ impl Mbc3 {
             clock: Utc::now(),
             carry_day: false,
         }
+    }
+
+    fn is_mbc30(&self) -> bool {
+        self.rom.rom_size() > 2 * 1024 * 1024 || self.rom.ram_size() > 32 * 1024
     }
 }
 

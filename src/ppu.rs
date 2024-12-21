@@ -173,12 +173,10 @@ impl Ppu {
             }
             // BG Color Palette
             0xFF68 | 0xFF69 => {
-                println!("Write {:#06X}: {:#04X}", address, value);
                 self.bg_color_palette.write(address - 0xFF68, value);
             }
             // OBJ Color Palette
             0xFF6A | 0xFF6B => {
-                println!("Write {:#06X}: {:#04X}", address, value);
                 self.obj_color_palette.write(address - 0xFF6A, value);
             }
             _ => warn!("Invalid PPU write address: {:#06X}", address),
@@ -224,14 +222,6 @@ impl Ppu {
             if self.ly == 154 {
                 self.ly = 0;
                 self.frame += 1;
-                println!(
-                    "BG Color Palette: {:?}",
-                    self.bg_color_palette.color_palette
-                );
-                println!(
-                    "OBJ Color Palette: {:?}",
-                    self.obj_color_palette.color_palette
-                );
             }
         }
     }

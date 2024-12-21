@@ -109,11 +109,11 @@ impl Bus {
             }
             0xFF68..=0xFF6B => context.ppu_read(address),
             0xFF70 => {
-                if context.device_mode() == DeviceMode::GameBoy {
+                if context.device_mode() == DeviceMode::GameBoyColor {
+                    0xF8 | self.wram_bank
+                } else {
                     warn!("Read from FF70 in DMG mode");
                     0xFF
-                } else {
-                    self.wram_bank
                 }
             }
             0xFF72 => {
@@ -158,6 +158,7 @@ impl Bus {
             }
         };
         debug!("Bus read: {:#06X} = {:#04X}", address, data);
+        // println!("Bus read: {:#06X} = {:#04X}", address, data);
         data
     }
 

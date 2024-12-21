@@ -37,7 +37,7 @@ struct Args {
     listen_port: String,
     #[clap(short, long)]
     send_port: String,
-    // #[clap(short, long)]
+    #[clap(short, long)]
     file_path: String,
     #[clap(short, long)]
     gb: bool,
@@ -117,6 +117,8 @@ fn main() -> Result<()> {
         .context("Failed to get event pump")?;
 
     let mut key_state = JoypadKeyState::new();
+
+    let mut reverb = Reverb::new(48_000, 400, 0.2);
     'running: loop {
         // イベント処理
         for event in event_pump.poll_iter() {
@@ -149,30 +151,13 @@ fn main() -> Result<()> {
                     Keycode::Space => key_state.set_key(JoypadKey::Select, false),
                     Keycode::Return => key_state.set_key(JoypadKey::Start, false),
 
-                    // Keycode::Right => key |= 1 << 0,
-                    // Keycode::Left => key |= 1 << 1,
-                    // Keycode::Up => key |= 1 << 2,
-                    // Keycode::Down => key |= 1 << 3,
-                    // Keycode::X => key |= 1 << 4,
-                    // Keycode::Z => key |= 1 << 5,
-                    // Keycode::Space => key |= 1 << 6,
-                    // Keycode::Return => key |= 1 << 7,
-
-                    // Keycode::Right => key &= !(1 << 0),
-                    // Keycode::Left => key &= !(1 << 1),
-                    // Keycode::Up => key &= !(1 << 2),
-                    // Keycode::Down => key &= !(1 << 3),
-                    // Keycode::X => key &= !(1 << 0),
-                    // Keycode::Z => key &= !(1 << 1),
-                    // Keycode::Space => key &= !(1 << 2),
-                    // Keycode::Return => key &= !(1 << 3),
                     _ => {}
                 },
                 _ => {}
             }
         }
 
-        let start_time = time::Instant::now();
+        // let start_time = time::Instant::now();
         canvas.set_draw_color(Color::RGB(0, 0, 0));
         canvas.clear();
         gameboy_color.set_key(key_state);
@@ -193,8 +178,11 @@ fn main() -> Result<()> {
 
         let audio_buffer = gameboy_color.audio_buffer();
         while audio_queue.size() > 1600 {
-            std::thread::sleep(time::Duration::from_micros(100));
+            std::thread::sleep(time::Duration::from_micros(1));
         }
+
+        let audio_buffer = reverb.process_frame(&audio_buffer);
+
         audio_queue
             .queue_audio(&audio_buffer.iter().flatten().copied().collect::<Vec<i16>>())
             .map_err(|e| anyhow::anyhow!(e))
@@ -208,8 +196,69 @@ fn main() -> Result<()> {
     }
 
     if let Some(save_data) = gameboy_color.save_data() {
-        utils::save_data(&gameboy_color.rom_name(), &save_data);
+        utils::save_data(gameboy_color.rom_name(), &save_data)?;
     }
 
     Ok(())
+}
+
+struct Reverb {
+    delay_buffer_left: Vec<f32>,  // 左チャンネルの遅延バッファ
+    delay_buffer_right: Vec<f32>, // 右チャンネルの遅延バッファ
+    write_index: usize,           // 書き込み位置
+    delay_samples: usize,         // 遅延サンプル数
+    decay: f32,                   // 減衰率
+}
+
+impl Reverb {
+    /// リバーブの初期化
+    /// - `sample_rate`: サンプルレート（例: 44100）
+    /// - `delay_ms`: リバーブの遅延時間（ミリ秒）
+    /// - `decay`: 減衰率（0.0～1.0）
+    pub fn new(sample_rate: usize, delay_ms: usize, decay: f32) -> Self {
+        let delay_samples = sample_rate * delay_ms / 1000; // 遅延時間をサンプル数に変換
+        Reverb {
+            delay_buffer_left: vec![0.0; delay_samples],
+            delay_buffer_right: vec![0.0; delay_samples],
+            write_index: 0,
+            delay_samples,
+            decay,
+        }
+    }
+
+    /// フレーム単位でリバーブを適用する（ステレオ対応）
+    /// - `input`: フレーム単位の入力シグナル（固定長のスライス, ステレオ形式）
+    /// - 戻り値: リバーブが適用された出力シグナル（固定長のベクタ, ステレオ形式）
+    pub fn process_frame(&mut self, input: &[[i16; 2]]) -> Vec<[i16; 2]> {
+        let mut output = vec![[0; 2]; input.len()]; // 出力バッファを入力と同じ長さで初期化
+        for (i, &sample) in input.iter().enumerate() {
+            // 左チャンネル処理
+            let sample_left_f32 = sample[0] as f32 / i16::MAX as f32; // 正規化
+            let read_index_left = (self.write_index + self.delay_buffer_left.len()
+                - self.delay_samples)
+                % self.delay_buffer_left.len();
+            let delayed_sample_left = self.delay_buffer_left[read_index_left];
+            let processed_sample_left = sample_left_f32 + delayed_sample_left * self.decay;
+            self.delay_buffer_left[self.write_index] = sample_left_f32; // バッファ更新
+
+            // 右チャンネル処理
+            let sample_right_f32 = sample[1] as f32 / i16::MAX as f32; // 正規化
+            let read_index_right = (self.write_index + self.delay_buffer_right.len()
+                - self.delay_samples)
+                % self.delay_buffer_right.len();
+            let delayed_sample_right = self.delay_buffer_right[read_index_right];
+            let processed_sample_right = sample_right_f32 + delayed_sample_right * self.decay;
+            self.delay_buffer_right[self.write_index] = sample_right_f32; // バッファ更新
+
+            // 出力にクリッピングして整数化（f32 -> i16）
+            output[i][0] = (processed_sample_left * i16::MAX as f32)
+                .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+            output[i][1] = (processed_sample_right * i16::MAX as f32)
+                .clamp(i16::MIN as f32, i16::MAX as f32) as i16;
+
+            // 書き込み位置を更新
+            self.write_index = (self.write_index + 1) % self.delay_buffer_left.len();
+        }
+        output
+    }
 }
